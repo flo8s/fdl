@@ -1,5 +1,5 @@
 [project]
-name = "fdl"
+name = "frozen-ducklake"
 version = "0.3.0"
 description = "Frozen Data Lake - DuckLake catalog management CLI"
 readme = "README.md"
