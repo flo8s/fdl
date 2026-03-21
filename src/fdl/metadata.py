@@ -72,6 +72,7 @@ def _build_model_info(node: Model, catalog_columns: dict) -> ModelInfo:
         columns=_build_columns(node, catalog_columns),
         materialized=node.config.materialized,
         sql=(node.compiled_code or "").strip() or None,
+        file_path=node.original_file_path or "",
     )
 
 
@@ -157,6 +158,7 @@ def build_metadata(
         cover=dataset_config.cover,
         tags=dataset_config.tags,
         ducklake_url=dataset_config.ducklake_url,
+        repository_url=dataset_config.repository_url,
         schemas=schemas,
         lineage=lineage,
         dependencies=dataset_config.dependencies,

@@ -29,6 +29,7 @@ class ModelInfo(BaseModel):
     materialized: Materialization
     columns: list[ColumnInfo]
     sql: str | None = None
+    file_path: str = ""
 
 
 class SchemaInfo(BaseModel):
@@ -58,6 +59,7 @@ class DatasetMetadata(BaseModel):
     cover: str = ""
     tags: list[str]
     ducklake_url: str
+    repository_url: str = ""
     schemas: dict[str, SchemaInfo]
     lineage: LineageInfo
     dependencies: list[DependencyInfo] | None = None
