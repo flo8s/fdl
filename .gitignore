@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# dbt
+target/
+dbt_packages/
+logs/
+
+# DuckLake
+*.ducklake
+*.ducklake.files/
+*.ducklake.wal
+
+# Environment
+.env
