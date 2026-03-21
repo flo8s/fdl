@@ -33,3 +33,6 @@ docs = ["mkdocs-material>=9"]
 
 [project.scripts]
 fdl = "fdl.cli:main"
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
