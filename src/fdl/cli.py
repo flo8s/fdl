@@ -85,21 +85,21 @@ def init(
 @app.command()
 def pull(
     source: str = typer.Argument(
-        ..., help="Remote name (e.g. origin, local)"
-    ),
-    sqlite: bool = typer.Option(
-        False, help="Initialize as SQLite (for dlt compatibility)"
+        ..., help="Remote name (e.g. origin)"
     ),
 ) -> None:
-    """Pull DuckLake catalog from source (init if not found)"""
-    from fdl.config_schema import load_dataset_config
-    from fdl.ducklake import init_ducklake
+    """Pull DuckLake catalog from source."""
+    from fdl.config import datasource_name
 
     dataset_dir = Path.cwd()
     dist_dir = dataset_dir / FDL_DIR
-    config = load_dataset_config(dataset_dir)
-    datasource = config.name
 
+    if not dist_dir.exists():
+        raise typer.BadParameter(
+            "Not initialized. Run 'fdl init <name>' first."
+        )
+
+    datasource = datasource_name(dataset_dir)
     resolved = _resolve_remote(source)
     print(f"--- pull: {datasource} ← {resolved} ---")
 
@@ -109,15 +109,11 @@ def pull(
 
         bucket = resolved.removeprefix("s3://")
         client = create_s3_client()
-        fetched = fetch_from_s3(client, bucket, dist_dir, datasource)
+        fetch_from_s3(client, bucket, dist_dir, datasource)
     else:
         from fdl.pull import pull_from_local
 
-        fetched = pull_from_local(Path(resolved), dist_dir, datasource)
-
-    if not fetched:
-        print("Catalog not found, initializing locally")
-        init_ducklake(dist_dir, dataset_dir, sqlite=sqlite)
+        pull_from_local(Path(resolved), dist_dir, datasource)
 
 
 @app.command()
