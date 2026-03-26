@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.3.1 (2026-03-26)
+
+### Bug Fixes
+
+- Remove .fdl/ pre-check from pull command
+  ([`4e2023b`](https://github.com/flo8s/fdl/commit/4e2023be8cf8f9e2d6d513014855134d6d520fd7))
+
+pull.py already creates .fdl/ via mkdir(parents=True). The check broke CI where .fdl/ is gitignored
+  and doesn't exist before pull.
+
+
 ## v0.3.0 (2026-03-26)
 
 ### Chores
