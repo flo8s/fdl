@@ -215,7 +215,7 @@ def resolve_remote(name: str, project_dir: Path) -> str:
         data = load_toml(path)
         url = data.get("remotes", {}).get(name)
         if url:
-            return url
+            return os.path.expandvars(url)
 
     raise ValueError(
         f"remote '{name}' not found.\n"
