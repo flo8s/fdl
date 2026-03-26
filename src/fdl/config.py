@@ -43,14 +43,17 @@ def get(key: str) -> str | None:
 
 
 def set_value(key: str, value: str, path: Path | None = None) -> None:
-    """Set a config value by dotted key."""
-    section, name = _parse_key(key)
+    """Set a config value. Keys without '.' are top-level, others are sectioned."""
     target = path or user_config_path()
     data = load_toml(target)
 
-    if section not in data:
-        data[section] = {}
-    data[section][name] = value
+    if "." not in key:
+        data[key] = value
+    else:
+        section, name = _parse_key(key)
+        if section not in data:
+            data[section] = {}
+        data[section][name] = value
 
     _write_toml(target, data)
 
@@ -225,16 +228,26 @@ def _parse_key(key: str) -> tuple[str, str]:
 
 
 def _write_toml(path: Path, data: dict) -> None:
-    """Write a simple TOML file (flat sections with string values)."""
+    """Write a simple TOML file (top-level values + flat sections)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
+
+    # Top-level values first
+    for k, v in data.items():
+        if not isinstance(v, dict):
+            lines.append(f'{k} = "{_escape_toml_string(str(v))}"')
+    if lines:
+        lines.append("")
+
+    # Sections
     for section, values in data.items():
         if not isinstance(values, dict):
             continue
         lines.append(f"[{section}]")
         for k, v in values.items():
-            lines.append(f'{k} = "{_escape_toml_string(v)}"')
+            lines.append(f'{k} = "{_escape_toml_string(str(v))}"')
         lines.append("")
+
     path.write_text("\n".join(lines))
 
 

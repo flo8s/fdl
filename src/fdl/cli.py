@@ -28,15 +28,58 @@ def callback() -> None:
 
 @app.command()
 def init(
+    name: str = typer.Argument(..., help="Datasource name"),
     sqlite: bool = typer.Option(
-        False, help="Initialize as SQLite (for dlt compatibility)"
+        False, help="Use SQLite catalog (for dlt compatibility)"
     ),
 ) -> None:
-    """Initialize DuckLake catalog"""
+    """Initialize a new fdl project (like git init)."""
+    import shutil
+
+    from fdl.config import PROJECT_CONFIG, public_url, set_value
     from fdl.ducklake import init_ducklake
 
     dataset_dir = Path.cwd()
-    init_ducklake(dataset_dir / FDL_DIR, dataset_dir, sqlite=sqlite)
+    dist_dir = dataset_dir / FDL_DIR
+    config_path = dataset_dir / PROJECT_CONFIG
+
+    if config_path.exists():
+        raise typer.BadParameter(f"{PROJECT_CONFIG} already exists")
+
+    # Validate prerequisites
+    try:
+        public_url()
+    except KeyError as e:
+        raise typer.BadParameter(str(e)) from None
+
+    try:
+        # fdl.toml
+        set_value("name", name, config_path)
+        if sqlite:
+            set_value("catalog", "sqlite", config_path)
+
+        # .fdl/ + DuckLake catalog
+        init_ducklake(dist_dir, dataset_dir, sqlite=sqlite)
+
+    except Exception:
+        # Rollback: remove partially created files
+        if config_path.exists():
+            config_path.unlink()
+        if dist_dir.exists():
+            shutil.rmtree(dist_dir)
+        raise
+
+    # Idempotent — no rollback needed
+    gitignore = dataset_dir / ".gitignore"
+    marker = ".fdl/"
+    if gitignore.exists():
+        content = gitignore.read_text()
+        if marker not in content:
+            gitignore.write_text(content.rstrip() + f"\n{marker}\n")
+    else:
+        gitignore.write_text(f"{marker}\n")
+
+    print(f"Initialized fdl project: {name}")
 
 
 @app.command()
