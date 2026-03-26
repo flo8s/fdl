@@ -37,3 +37,4 @@ fdl = "fdl.cli:main"
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 allow_zero_version = true
+major_on_zero = false
