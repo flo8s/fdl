@@ -7,8 +7,9 @@ from pathlib import Path
 import duckdb
 
 from fdl import DUCKLAKE_FILE, ducklake_data_path
-from fdl.s3 import create_s3_client
+from fdl.config import s3_access_key_id, s3_endpoint, s3_secret_access_key
 from fdl.config_schema import load_dataset_config
+from fdl.s3 import create_s3_client
 
 
 def _format_size(size_bytes: int) -> str:
@@ -44,15 +45,16 @@ def _cleanup_scheduled_files(
         conn.execute("INSTALL ducklake; LOAD ducklake;")
         conn.execute("INSTALL httpfs; LOAD httpfs;")
         conn.execute(f"""
-            SET s3_endpoint = '{os.environ["S3_ENDPOINT"]}';
-            SET s3_access_key_id = '{os.environ["S3_ACCESS_KEY_ID"]}';
-            SET s3_secret_access_key = '{os.environ["S3_SECRET_ACCESS_KEY"]}';
+            SET s3_endpoint = '{s3_endpoint().removeprefix("https://")}';
+            SET s3_access_key_id = '{s3_access_key_id()}';
+            SET s3_secret_access_key = '{s3_secret_access_key()}';
             SET s3_region = 'auto';
         """)
         conn.execute(f"""
             ATTACH '{ducklake_file}' AS {datasource} (
                 TYPE ducklake,
-                DATA_PATH '{data_path}'
+                DATA_PATH '{data_path}',
+                OVERRIDE_DATA_PATH true
             )
         """)
         result = conn.execute(

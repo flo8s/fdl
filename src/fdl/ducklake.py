@@ -7,7 +7,7 @@ from pathlib import Path
 
 import duckdb
 
-from fdl import DIST_DIR, DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
+from fdl import FDL_DIR, DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
 from fdl.config_schema import load_dataset_config
 
 
@@ -16,24 +16,26 @@ def connect(
     *,
     storage: str | None = None,
 ) -> Generator[duckdb.DuckDBPyConnection]:
-    """DuckLake カタログに接続し DuckDB 接続を返す。
+    """Connect to the DuckLake catalog and return a DuckDB connection.
 
-    データセット名は dataset.yml (または cwd のディレクトリ名) から自動検出する。
-    データファイルのパスは DUCKLAKE_STORAGE 環境変数で制御 (デフォルト "dist")。
+    Dataset name is auto-detected from dataset.yml (or cwd directory name).
+    Data file path is controlled by FDL_STORAGE env var (default: .fdl).
 
     Args:
-        storage: データファイルのベースパス。省略時は環境変数から読み取り。
+        storage: Base path for data files. Reads from env var if omitted.
     """
     config = load_dataset_config(Path.cwd())
     name = config.name
 
-    ducklake_path = DIST_DIR / DUCKLAKE_FILE
+    ducklake_path = FDL_DIR / DUCKLAKE_FILE
     if not ducklake_path.exists():
         msg = f"{ducklake_path} not found. Run 'fdl init' or 'fdl pull' first."
         raise FileNotFoundError(msg)
 
     if storage is None:
-        storage = os.environ.get("DUCKLAKE_STORAGE", str(DIST_DIR))
+        from fdl.config import storage as get_storage
+
+        storage = get_storage()
     data_path = ducklake_data_path(f"{storage}/{DUCKLAKE_FILE}")
 
     conn = duckdb.connect()
@@ -41,11 +43,13 @@ def connect(
         conn.execute("INSTALL ducklake; LOAD ducklake;")
         if storage.startswith("s3://"):
             conn.execute("INSTALL httpfs; LOAD httpfs;")
+            from fdl.config import s3_access_key_id, s3_endpoint, s3_secret_access_key
+
             conn.execute(f"""
                 SET s3_url_style = 'path';
-                SET s3_access_key_id = '{os.environ["S3_ACCESS_KEY_ID"]}';
-                SET s3_secret_access_key = '{os.environ["S3_SECRET_ACCESS_KEY"]}';
-                SET s3_endpoint = '{os.environ["S3_ENDPOINT"]}';
+                SET s3_access_key_id = '{s3_access_key_id()}';
+                SET s3_secret_access_key = '{s3_secret_access_key()}';
+                SET s3_endpoint = '{s3_endpoint().removeprefix("https://")}';
                 SET s3_region = 'auto';
             """)
         conn.execute(f"""
@@ -59,7 +63,7 @@ def connect(
         conn.close()
 
 
-def create_destination(storage_path: str = str(DIST_DIR)):
+def create_destination(storage_path: str = str(FDL_DIR)):
     """dlt DuckLake destination を作成する。
 
     storage_path でデータの書き込み先ベースパスを指定する。
@@ -70,19 +74,21 @@ def create_destination(storage_path: str = str(DIST_DIR)):
     from dlt.destinations import ducklake
     from dlt.destinations.impl.ducklake.configuration import DuckLakeCredentials
 
-    DIST_DIR.mkdir(exist_ok=True)
+    FDL_DIR.mkdir(exist_ok=True)
     ducklake_path = f"{storage_path}/{DUCKLAKE_FILE}"
     storage_url = ducklake_data_path(ducklake_path)
 
     if storage_path.startswith("s3://"):
         from dlt.common.configuration.specs.aws_credentials import AwsCredentials
 
+        from fdl.config import s3_access_key_id, s3_endpoint, s3_secret_access_key
+
         storage = FilesystemConfiguration(
             bucket_url=storage_url,
             credentials=AwsCredentials(
-                aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
-                aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
-                endpoint_url=f"https://{os.environ['S3_ENDPOINT']}",
+                aws_access_key_id=s3_access_key_id(),
+                aws_secret_access_key=s3_secret_access_key(),
+                endpoint_url=s3_endpoint(),
                 region_name="auto",
             ),
         )
@@ -91,7 +97,7 @@ def create_destination(storage_path: str = str(DIST_DIR)):
 
     return ducklake(
         credentials=DuckLakeCredentials(
-            catalog=f"sqlite:///{DIST_DIR / DUCKLAKE_SQLITE}",
+            catalog=f"sqlite:///{FDL_DIR / DUCKLAKE_SQLITE}",
             storage=storage,
         ),
         override_data_path=True,
@@ -125,7 +131,7 @@ def init_ducklake(dist_dir: Path, dataset_dir: Path, *, sqlite: bool = False) ->
 
 def convert_sqlite_to_duckdb(dataset_dir: Path) -> None:
     """Convert SQLite catalog to DuckDB format, replacing ducklake.duckdb."""
-    dist_dir = dataset_dir / DIST_DIR
+    dist_dir = dataset_dir / FDL_DIR
     sqlite_file = dist_dir / DUCKLAKE_SQLITE
     duckdb_file = dist_dir / DUCKLAKE_FILE
     if not sqlite_file.exists():

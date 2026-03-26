@@ -1,16 +1,16 @@
 """S3 client factory."""
 
-import os
+from fdl.config import s3_access_key_id, s3_endpoint, s3_secret_access_key
 
 
 def create_s3_client():
-    """Create a boto3 S3 client from environment variables."""
+    """Create a boto3 S3 client."""
     import boto3
 
     return boto3.client(
         "s3",
-        endpoint_url=f"https://{os.environ['S3_ENDPOINT']}",
-        aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+        endpoint_url=s3_endpoint(),
+        aws_access_key_id=s3_access_key_id(),
+        aws_secret_access_key=s3_secret_access_key(),
         region_name="auto",
     )

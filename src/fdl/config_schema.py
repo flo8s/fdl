@@ -41,7 +41,6 @@ class DatasetConfig(BaseModel):
     tags: list[str] = []
     cover: str = ""
     public_url: str
-    s3_url: str = ""
     repository_url: str = ""
     schemas: dict[str, DatasetSchemaConfig] = {}
     dependencies: list[DependencyInfo] | None = None
