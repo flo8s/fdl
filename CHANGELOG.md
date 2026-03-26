@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.3.2 (2026-03-26)
+
+### Bug Fixes
+
+- Expand env vars in remote URLs
+  ([`38341e3`](https://github.com/flo8s/fdl/commit/38341e30a2c131630b4eecfa96d28e0a84ca841c))
+
+resolve_remote() now calls os.path.expandvars() so that fdl.toml remotes like s3://${FDL_S3_BUCKET}
+  are expanded.
+
+
 ## v0.3.1 (2026-03-26)
 
 ### Bug Fixes
