@@ -185,6 +185,10 @@ def s3_env_dict() -> dict[str, str]:
         v = _resolve(env_key, section, name)
         if v:
             result[env_key] = v
+    # Derived: hostname without scheme (for DuckDB s3_endpoint setting)
+    endpoint = result.get("FDL_S3_ENDPOINT")
+    if endpoint:
+        result["FDL_S3_ENDPOINT_HOST"] = endpoint.removeprefix("https://").removeprefix("http://")
     return result
 
 

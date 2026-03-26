@@ -63,16 +63,21 @@ def connect(
         conn.close()
 
 
-def create_destination(storage_path: str = str(FDL_DIR)):
+def create_destination(storage_path: str | None = None):
     """Create a dlt DuckLake destination.
 
     Args:
-        storage_path: Base path for data files. Defaults to local .fdl/.
-            S3 paths read credentials from fdl config.
+        storage_path: Base path for data files. Resolved from FDL_STORAGE
+            env var / config if omitted. S3 paths read credentials from fdl config.
     """
     from dlt.common.storages.configuration import FilesystemConfiguration
     from dlt.destinations import ducklake
     from dlt.destinations.impl.ducklake.configuration import DuckLakeCredentials
+
+    if storage_path is None:
+        from fdl.config import storage as get_storage
+
+        storage_path = get_storage()
 
     FDL_DIR.mkdir(exist_ok=True)
     ducklake_path = f"{storage_path}/{DUCKLAKE_FILE}"
