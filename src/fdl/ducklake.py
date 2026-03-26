@@ -64,11 +64,11 @@ def connect(
 
 
 def create_destination(storage_path: str = str(FDL_DIR)):
-    """dlt DuckLake destination を作成する。
+    """Create a dlt DuckLake destination.
 
-    storage_path でデータの書き込み先ベースパスを指定する。
-    省略時はローカル dist/ に書き込む。
-    S3 パスの場合は環境変数から R2 credentials を読み取る。
+    Args:
+        storage_path: Base path for data files. Defaults to local .fdl/.
+            S3 paths read credentials from fdl config.
     """
     from dlt.common.storages.configuration import FilesystemConfiguration
     from dlt.destinations import ducklake
