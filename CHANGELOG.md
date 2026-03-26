@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.2.1 (2026-03-26)
+
+### Bug Fixes
+
+- Update outdated docstring in create_destination
+  ([`ad31665`](https://github.com/flo8s/fdl/commit/ad31665cf4cf9cd02bd4649ac45f16c2153629f4))
+
+### Continuous Integration
+
+- Merge publish into release workflow
+  ([`22ba582`](https://github.com/flo8s/fdl/commit/22ba582fab145d68240605c9b68a9571492e6161))
+
+GITHUB_TOKEN tags don't trigger other workflows. Run PyPI publish in the same job after
+  semantic-release.
+
+- Switch release to manual trigger (workflow_dispatch)
+  ([`0186734`](https://github.com/flo8s/fdl/commit/01867344bcb931c7436407caefbf522afeaba22f))
+
+
 ## v0.2.0 (2026-03-26)
 
 ### Bug Fixes
