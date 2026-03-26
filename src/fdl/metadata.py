@@ -10,6 +10,7 @@ from dbt.artifacts.schemas.catalog import CatalogArtifact
 from dbt.artifacts.schemas.manifest import WritableManifest
 
 from fdl import METADATA_JSON
+from fdl.config import ducklake_url as fdl_ducklake_url
 from fdl.config_schema import DatasetConfig, load_dataset_config
 from fdl.metadata_schema import (
     ColumnInfo,
@@ -157,7 +158,7 @@ def build_metadata(
         description=dataset_config.description,
         cover=dataset_config.cover,
         tags=dataset_config.tags,
-        ducklake_url=dataset_config.ducklake_url,
+        ducklake_url=fdl_ducklake_url(datasource),
         repository_url=dataset_config.repository_url,
         schemas=schemas,
         lineage=lineage,
@@ -184,8 +185,10 @@ def load_catalog(target_dir: Path) -> CatalogArtifact | None:
 
 def generate_metadata(dataset_dir: Path, dist_dir: Path, target_dir: Path) -> None:
     """I/O wrapper: ファイル読み書き + ログ出力"""
+    from fdl.config import datasource_name
+
     dataset_config = load_dataset_config(dataset_dir)
-    datasource = dataset_config.name
+    datasource = datasource_name(dataset_dir)
     manifest = load_manifest(target_dir)
     catalog = load_catalog(target_dir)
 

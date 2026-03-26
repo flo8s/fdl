@@ -7,8 +7,7 @@ from pathlib import Path
 import duckdb
 
 from fdl import DUCKLAKE_FILE, ducklake_data_path
-from fdl.config import s3_access_key_id, s3_endpoint, s3_secret_access_key
-from fdl.config_schema import load_dataset_config
+from fdl.config import datasource_name, s3_access_key_id, s3_endpoint, s3_secret_access_key
 from fdl.s3 import create_s3_client
 
 
@@ -101,8 +100,7 @@ def gc_datasource(
     older_than_days: int | None = None,
 ) -> None:
     """Clean up orphaned Parquet files for a datasource."""
-    config = load_dataset_config(dataset_dir)
-    datasource = config.name
+    datasource = datasource_name(dataset_dir)
     print(f"--- gc: {datasource} ---")
 
     ducklake_file = dist_dir / DUCKLAKE_FILE

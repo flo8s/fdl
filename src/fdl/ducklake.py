@@ -8,7 +8,6 @@ from pathlib import Path
 import duckdb
 
 from fdl import FDL_DIR, DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
-from fdl.config_schema import load_dataset_config
 
 
 @contextmanager
@@ -24,8 +23,9 @@ def connect(
     Args:
         storage: Base path for data files. Reads from env var if omitted.
     """
-    config = load_dataset_config(Path.cwd())
-    name = config.name
+    from fdl.config import datasource_name
+
+    name = datasource_name()
 
     ducklake_path = FDL_DIR / DUCKLAKE_FILE
     if not ducklake_path.exists():
@@ -110,9 +110,10 @@ def init_ducklake(dist_dir: Path, dataset_dir: Path, *, sqlite: bool = False) ->
     if catalog_file.exists():
         return
 
-    config = load_dataset_config(dataset_dir)
-    datasource = config.name
-    data_path = ducklake_data_path(config.ducklake_url)
+    from fdl.config import datasource_name, ducklake_url
+
+    datasource = datasource_name(dataset_dir)
+    data_path = ducklake_data_path(ducklake_url(datasource))
     meta_type = "sqlite" if sqlite else "duckdb"
     print(f"Creating DuckLake ({meta_type}): {datasource} (DATA_PATH: {data_path})")
 
@@ -137,8 +138,10 @@ def convert_sqlite_to_duckdb(dataset_dir: Path) -> None:
     if not sqlite_file.exists():
         return
 
-    config = load_dataset_config(dataset_dir)
-    data_path = ducklake_data_path(config.ducklake_url)
+    from fdl.config import datasource_name, ducklake_url
+
+    datasource = datasource_name(dataset_dir)
+    data_path = ducklake_data_path(ducklake_url(datasource))
 
     print("Converting DuckLake: SQLite -> DuckDB")
     SRC = "src"

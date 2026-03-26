@@ -66,6 +66,33 @@ def get_all(path: Path | None = None) -> dict[str, str]:
     return result
 
 
+def datasource_name(project_dir: Path | None = None) -> str:
+    """Datasource name from fdl.toml, fallback to directory name."""
+    project_dir = project_dir or Path.cwd()
+    data = load_toml(project_dir / PROJECT_CONFIG)
+    name = data.get("name")
+    if name:
+        return name
+    return project_dir.resolve().name
+
+
+def public_url() -> str:
+    """Public base URL for dataset access (e.g. https://data.queria.io)."""
+    v = _resolve("FDL_PUBLIC_URL", "storage", "public_url")
+    if not v:
+        raise KeyError(
+            "Public URL not configured. Set FDL_PUBLIC_URL or: fdl config storage.public_url <value>"
+        )
+    return v
+
+
+def ducklake_url(datasource: str) -> str:
+    """Public DuckLake catalog URL for a datasource."""
+    from fdl import DUCKLAKE_FILE
+
+    return f"{public_url()}/{datasource}/{DUCKLAKE_FILE}"
+
+
 def storage() -> str:
     """FDL_STORAGE: base path for data files (env var or default .fdl)."""
     from fdl import FDL_DIR

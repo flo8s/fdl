@@ -84,13 +84,12 @@ def push(
     ),
 ) -> None:
     """Push build artifacts"""
-    from fdl.config_schema import load_dataset_config
+    from fdl.config import datasource_name
     from fdl.ducklake import convert_sqlite_to_duckdb
 
     dataset_dir = Path.cwd()
     dist_dir = dataset_dir / FDL_DIR
-    config = load_dataset_config(dataset_dir)
-    datasource = config.name
+    datasource = datasource_name(dataset_dir)
 
     resolved = _resolve_remote(dest)
     print(f"--- push: {datasource} → {resolved} ---")
@@ -136,8 +135,7 @@ def run(ctx: typer.Context) -> None:
     """
     import subprocess
 
-    from fdl.config import fdl_env_dict
-    from fdl.config_schema import load_dataset_config
+    from fdl.config import datasource_name, fdl_env_dict
 
     remote, cmd = _parse_run_args(ctx.args)
 
@@ -149,9 +147,8 @@ def run(ctx: typer.Context) -> None:
     # Compute storage for remote target
     storage_val = None
     if remote:
-        config = load_dataset_config(Path.cwd())
         resolved = _resolve_remote(remote)
-        storage_val = f"{resolved}/{config.name}"
+        storage_val = f"{resolved}/{datasource_name()}"
 
     # Build env with all FDL_* values (won't override existing env vars)
     env = os.environ.copy()
