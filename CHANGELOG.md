@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-03-26)
+
+### Chores
+
+- Bump frozen-ducklake to 0.2.1
+  ([`b359533`](https://github.com/flo8s/fdl/commit/b3595338fa0651506c8778d32f094b7f9385d1df))
+
+### Features
+
+- Require fdl init before pull, remove --sqlite fallback
+  ([`b21369e`](https://github.com/flo8s/fdl/commit/b21369e0d06a9977e4e2d4bba90661f551dcd01d))
+
+pull no longer auto-initializes the catalog. Users must run fdl init first. Removes --sqlite option
+  from pull.
+
+- Rewrite fdl init with fdl.toml scaffolding and rollback
+  ([`e5e6454`](https://github.com/flo8s/fdl/commit/e5e645457f4ed0ac65cbc04f9909fee9bc43805c))
+
+- name argument required (like git init <repo>) - generates fdl.toml with name and optional catalog
+  type - auto-creates .gitignore entry for .fdl/ - rolls back fdl.toml and .fdl/ on failure -
+  set_value now auto-detects top-level vs sectioned keys
+
+### Refactoring
+
+- Move datasource/URL resolution from DatasetConfig to config module
+  ([`6ff1ff2`](https://github.com/flo8s/fdl/commit/6ff1ff224eac627954cc4dd702cdae6f855eec09))
+
+datasource_name(), public_url(), ducklake_url() are now in config.py with 3-layer resolution (env
+  var → workspace → user config). DatasetConfig no longer holds public_url or ducklake_url.
+
+- Resolve storage in create_destination, add FDL_S3_ENDPOINT_HOST
+  ([`26bcec8`](https://github.com/flo8s/fdl/commit/26bcec89dcfc0a946602f2db9ef5c6ad96325091))
+
+- create_destination defaults to config.storage() instead of hardcoded .fdl - s3_env_dict now
+  derives FDL_S3_ENDPOINT_HOST (scheme-less) for DuckDB
+
+
 ## v0.2.1 (2026-03-26)
 
 ### Bug Fixes
