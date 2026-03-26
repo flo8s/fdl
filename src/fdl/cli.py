@@ -93,12 +93,6 @@ def pull(
 
     dataset_dir = Path.cwd()
     dist_dir = dataset_dir / FDL_DIR
-
-    if not dist_dir.exists():
-        raise typer.BadParameter(
-            "Not initialized. Run 'fdl init <name>' first."
-        )
-
     datasource = datasource_name(dataset_dir)
     resolved = _resolve_remote(source)
     print(f"--- pull: {datasource} ← {resolved} ---")
