@@ -134,16 +134,17 @@ def gc_datasource(
         orphaned[rel_path] = obj
 
     orphaned_size = sum(obj["Size"] for obj in orphaned.values())
-    print("[Step 2] Orphaned files on R2:")
-    print(f"  Active: {len(active_files)} files")
-    print(f"  R2 total: {len(r2_files)} files")
-    print(f"  Orphaned: {len(orphaned)} files ({_format_size(orphaned_size)})")
 
     if not orphaned:
+        print("[Step 2] No orphaned files found.")
         return
 
+    print("[Step 2] Orphaned files on R2:")
     for rel_path in sorted(orphaned):
         print(f"  {prefix}{rel_path}")
+    print(f"\n  Active: {len(active_files)} files")
+    print(f"  R2 total: {len(r2_files)} files")
+    print(f"  Orphaned: {len(orphaned)} files ({_format_size(orphaned_size)})")
 
     if dry_run:
         return

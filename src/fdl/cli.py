@@ -8,7 +8,7 @@ from typer.main import Typer
 
 from fdl import FDL_DIR
 
-app = typer.Typer()
+app = typer.Typer(pretty_exceptions_short=True)
 
 
 def _resolve_remote(name: str) -> str:
@@ -21,8 +21,21 @@ def _resolve_remote(name: str) -> str:
         raise typer.BadParameter(str(e)) from None
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from importlib.metadata import version
+
+        print(f"fdl {version('frozen-ducklake')}")
+        raise typer.Exit()
+
+
 @app.callback()
-def callback() -> None:
+def callback(
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=_version_callback, is_eager=True,
+        help="Show version and exit",
+    ),
+) -> None:
     """fdl: DuckLake catalog management CLI"""
 
 
