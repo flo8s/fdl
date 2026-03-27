@@ -1,9 +1,6 @@
-# FDL
+# fdl — Frozen DuckLake CLI
 
-DuckLake catalog management CLI.
-
-FDL manages the lifecycle of [DuckLake](https://ducklake.select/) catalogs — initialization, building, and distribution.
-With a Git-like command interface, you can consistently manage your data catalogs from development to deployment.
+fdl automates the lifecycle of [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) catalogs — from initialization to deployment.
 
 ## Features
 
@@ -15,6 +12,22 @@ With a Git-like command interface, you can consistently manage your data catalog
 - HTTP server with CORS and Range request support (`fdl serve`)
 
 ## Installation
+
+### Global install (recommended)
+
+=== "uv"
+
+    ```bash
+    uv tool install frozen-ducklake
+    ```
+
+=== "pipx"
+
+    ```bash
+    pipx install frozen-ducklake
+    ```
+
+### Project dependency
 
 === "uv"
 

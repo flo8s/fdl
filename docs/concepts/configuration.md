@@ -1,6 +1,6 @@
 # Configuration
 
-FDL uses a 3-layer configuration system, following the same approach as `git config`.
+fdl uses a 3-layer configuration system, following the same approach as `git config`.
 Settings are managed at the project, workspace, and user level.
 
 ## Config Layers

@@ -1,6 +1,6 @@
 # CLI Reference
 
-fdl provides 8 commands with a Git-like interface.
+fdl provides 8 commands for managing Frozen DuckLake catalogs.
 
 ## Commands
 

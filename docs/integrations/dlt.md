@@ -1,7 +1,7 @@
 # dlt Integration
 
 [dlt](https://dlthub.com/) (data load tool) is a Python library for building data pipelines.
-FDL provides built-in support for using dlt as a data loading backend with DuckLake.
+fdl provides built-in support for using dlt as a data loading backend with DuckLake.
 
 ## Why SQLite Catalog?
 
@@ -9,10 +9,10 @@ DuckLake supports two catalog backends: DuckDB and SQLite.
 When using dlt, the **SQLite catalog is required**.
 
 This is because dlt manages its own DuckDB connection internally and cannot share a DuckDB-based
-DuckLake catalog with FDL. SQLite, on the other hand, works as an external file that both dlt
-and FDL can access independently without connection conflicts.
+DuckLake catalog with fdl. SQLite, on the other hand, works as an external file that both dlt
+and fdl can access independently without connection conflicts.
 
-The SQLite catalog is only used during development. When you run `fdl push`, FDL automatically
+The SQLite catalog is only used during development. When you run `fdl push`, fdl automatically
 converts it to DuckDB format for distribution.
 
 ```
