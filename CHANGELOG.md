@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-03-27)
+
+### Continuous Integration
+
+- Add GitHub Pages deployment workflow
+  ([`ebad8ba`](https://github.com/flo8s/fdl/commit/ebad8ba244a1846a626df2da03db59c84a9d57b4))
+
+Build and deploy docs on push to main (docs/**, mkdocs.yml, CHANGELOG.md) and manual dispatch.
+
+### Documentation
+
+- Add MkDocs Material documentation site
+  ([`7f00206`](https://github.com/flo8s/fdl/commit/7f00206a60c1eb6cf098d5d80db8283c5ed4a051))
+
+- mkdocs.yml with Material theme (light/dark, code copy, search) - 6 pages: index, quickstart, CLI
+  reference, configuration, dlt integration, changelog - Changelog page symlinked to CHANGELOG.md -
+  Update README.md with project overview and commands - Add site/ to .gitignore
+
+- Update GitHub Pages actions and set custom site URL
+  ([`5fe951b`](https://github.com/flo8s/fdl/commit/5fe951b03bc0cdac6aca1e890c2ded9026066dca))
+
+### Features
+
+- Add fdl gc command with --dry-run support
+  ([`9e5d451`](https://github.com/flo8s/fdl/commit/9e5d451f53c1ffa488ecab564c6a0460d32f859b))
+
+fdl gc origin --dry-run # list orphaned files and sizes fdl gc origin # interactive deletion with
+  confirmation fdl gc origin --force # delete without confirmation fdl gc origin --older-than 7 #
+  only files older than 7 days
+
+
 ## v0.3.3 (2026-03-27)
 
 ### Bug Fixes
