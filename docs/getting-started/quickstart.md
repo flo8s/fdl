@@ -11,9 +11,33 @@ This guide walks you through initializing a data catalog and deploying it to rem
 
 ## 1. Install
 
-```bash
-uv add frozen-ducklake
-```
+### Global install (recommended)
+
+=== "uv"
+
+    ```bash
+    uv tool install frozen-ducklake
+    ```
+
+=== "pipx"
+
+    ```bash
+    pipx install frozen-ducklake
+    ```
+
+### Project dependency
+
+=== "uv"
+
+    ```bash
+    uv add frozen-ducklake
+    ```
+
+=== "pip"
+
+    ```bash
+    pip install frozen-ducklake
+    ```
 
 ## 2. Initialize Project
 
