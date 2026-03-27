@@ -2,7 +2,7 @@
 
 Frozen Data Lake — DuckLake catalog management CLI.
 
-FDL manages the lifecycle of [DuckLake](https://ducklake.select/) catalogs: initialization, building, and distribution.
+fdl manages the lifecycle of [DuckLake](https://ducklake.select/) catalogs: initialization, building, and distribution.
 With a Git-like command interface, you can consistently manage your data catalogs from development to deployment.
 
 ## Installation
@@ -41,6 +41,7 @@ fdl push origin
 | `fdl push` | Upload catalog to remote |
 | `fdl metadata` | Generate metadata from dbt artifacts |
 | `fdl run` | Run a command with injected env vars |
+| `fdl gc` | Clean up orphaned data files |
 | `fdl config` | Get or set configuration |
 | `fdl serve` | Start an HTTP server |
 

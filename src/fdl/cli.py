@@ -214,6 +214,40 @@ def _parse_run_args(args: list[str]) -> tuple[str | None, list[str]]:
     return remote, cmd
 
 
+@app.command()
+def gc(
+    remote: str = typer.Argument(..., help="Remote name (e.g. origin)"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="List orphaned files without deleting"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip confirmation prompt"
+    ),
+    older_than_days: int = typer.Option(
+        None, "--older-than", help="Only target files older than N days"
+    ),
+) -> None:
+    """Clean up orphaned data files on remote storage."""
+    from fdl.gc import gc_datasource
+
+    dataset_dir = Path.cwd()
+    dist_dir = dataset_dir / FDL_DIR
+
+    resolved = _resolve_remote(remote)
+    if not resolved.startswith("s3://"):
+        raise typer.BadParameter("gc only supports S3 remotes")
+
+    bucket = resolved.removeprefix("s3://")
+    gc_datasource(
+        dataset_dir,
+        dist_dir,
+        bucket=bucket,
+        force=force,
+        dry_run=dry_run,
+        older_than_days=older_than_days,
+    )
+
+
 @app.command("config")
 def config_cmd(
     key: str = typer.Argument(None, help="Config key (e.g. 's3.endpoint')"),

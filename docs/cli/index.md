@@ -1,6 +1,6 @@
 # CLI Reference
 
-FDL provides 7 commands with a Git-like interface.
+fdl provides 8 commands with a Git-like interface.
 
 ## Commands
 
@@ -11,6 +11,7 @@ FDL provides 7 commands with a Git-like interface.
 | [`push`](#push) | Upload catalog to remote | `git push` |
 | [`metadata`](#metadata) | Generate metadata from dbt artifacts | — |
 | [`run`](#run) | Run a command with injected env vars | — |
+| [`gc`](#gc) | Clean up orphaned data files | `git gc` |
 | [`config`](#config) | Get or set configuration | `git config` |
 | [`serve`](#serve) | Start an HTTP server | — |
 
@@ -89,7 +90,7 @@ Requires `dataset.yml` in the project root.
 
 ## run
 
-Run a command with FDL environment variables injected.
+Run a command with fdl environment variables injected.
 
 ```
 fdl run [REMOTE] -- COMMAND [ARGS...]
@@ -122,6 +123,41 @@ fdl run -- dbt run
 
 # Use remote storage for dbt run
 fdl run origin -- dbt run
+```
+
+## gc
+
+Clean up orphaned data files on remote storage. DuckLake tracks data files by snapshot; files no longer referenced by any active snapshot are considered orphaned.
+
+```
+fdl gc REMOTE [--dry-run] [--force] [--older-than DAYS]
+```
+
+| Argument / Option | Description |
+|---|---|
+| `REMOTE` | Remote name (e.g. `origin`). S3 remotes only. |
+| `--dry-run`, `-n` | List orphaned files and sizes without deleting |
+| `--force`, `-f` | Skip confirmation prompt |
+| `--older-than DAYS` | Only target files older than N days |
+
+The command performs two cleanup steps:
+
+1. Runs DuckLake's `ducklake_cleanup_old_files()` for files scheduled for deletion by snapshot expiration
+2. Scans remote storage for files not in the active set (`end_snapshot IS NULL`) and deletes them
+
+Deletion is irreversible. Always use `--dry-run` first to review the file list.
+
+Examples:
+
+```bash
+# Preview orphaned files and total size
+fdl gc origin --dry-run
+
+# Delete with confirmation prompt
+fdl gc origin
+
+# Delete files older than 7 days, no prompt
+fdl gc origin --older-than 7 --force
 ```
 
 ## config

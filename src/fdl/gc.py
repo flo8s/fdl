@@ -97,6 +97,7 @@ def gc_datasource(
     *,
     bucket: str,
     force: bool = False,
+    dry_run: bool = False,
     older_than_days: int | None = None,
 ) -> None:
     """Clean up orphaned Parquet files for a datasource."""
@@ -143,6 +144,9 @@ def gc_datasource(
 
     for rel_path in sorted(orphaned):
         print(f"  {prefix}{rel_path}")
+
+    if dry_run:
+        return
 
     # Confirm deletion
     if not force:
