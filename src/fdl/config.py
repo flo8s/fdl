@@ -136,13 +136,13 @@ def fdl_env_dict(*, storage_override: str | None = None) -> dict[str, str]:
 
 
 def _resolve(env_key: str, section: str, name: str) -> str | None:
-    """Resolve a value: env var → .fdl/config → ~/.fdl/config."""
+    """Resolve a value: env var → fdl.toml → .fdl/config → ~/.fdl/config."""
     return os.environ.get(env_key) or _get_config_value(section, name)
 
 
 def _get_config_value(section: str, name: str) -> str | None:
-    """Look up a value from workspace config, then user config."""
-    for path in [workspace_config_path(), user_config_path()]:
+    """Look up a value from project → workspace → user config."""
+    for path in [project_config_path(), workspace_config_path(), user_config_path()]:
         data = load_toml(path)
         value = data.get(section, {}).get(name)
         if value:
