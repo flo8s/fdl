@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.3.3 (2026-03-27)
+
+### Bug Fixes
+
+- Include fdl.toml in config value resolution
+  ([`2e6c921`](https://github.com/flo8s/fdl/commit/2e6c921e4835f94d54f47ff889809abf1f2ec5dc))
+
+_get_config_value now checks project config (fdl.toml) before workspace and user config, matching
+  resolve_remote's 3-layer lookup.
+
+
 ## v0.3.2 (2026-03-26)
 
 ### Bug Fixes
