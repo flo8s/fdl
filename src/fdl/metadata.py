@@ -10,6 +10,7 @@ from dbt.artifacts.schemas.catalog import CatalogArtifact
 from dbt.artifacts.schemas.manifest import WritableManifest
 
 from fdl import METADATA_JSON
+from fdl.console import console
 from fdl.config import ducklake_url as fdl_ducklake_url
 from fdl.config_schema import DatasetConfig, load_dataset_config
 from fdl.metadata_schema import (
@@ -203,8 +204,8 @@ def generate_metadata(dataset_dir: Path, dist_dir: Path, target_dir: Path) -> No
         json.dump(output.model_dump(exclude_none=True), f, ensure_ascii=False, indent=2)
 
     total_tables = sum(len(s.tables) for s in output.schemas.values())
-    print(f"Generated metadata: {output_path}")
-    print(f"  Datasource: {datasource} / Public tables: {total_tables}")
+    console.print(f"[green]Generated metadata: {output_path}[/green]")
+    console.print(f"  Datasource: {datasource} / Public tables: [bold]{total_tables}[/bold]")
 
 
 def _copy_docs_to_dist(target_dir: Path, dist_dir: Path) -> None:

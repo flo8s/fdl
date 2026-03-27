@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, METADATA_JSON
+from fdl.console import console
 
 
 def push_to_local(output_dir: Path, dist_dir: Path, datasource: str) -> None:
@@ -14,7 +15,7 @@ def push_to_local(output_dir: Path, dist_dir: Path, datasource: str) -> None:
     for name in [DUCKLAKE_FILE, DUCKLAKE_SQLITE, METADATA_JSON]:
         src = dist_dir / name
         if src.exists():
-            print(f"  {datasource}/{name}")
+            console.print(f"  [dim]{datasource}/{name}[/dim]")
             shutil.copy2(src, dest / name)
 
     # Data files (ducklake.duckdb.files/)
@@ -24,7 +25,7 @@ def push_to_local(output_dir: Path, dist_dir: Path, datasource: str) -> None:
         data_dest = dest / ducklake_data_dir
         if data_dest.exists():
             shutil.rmtree(data_dest)
-        print(f"  {datasource}/{ducklake_data_dir}/")
+        console.print(f"  [dim]{datasource}/{ducklake_data_dir}/[/dim]")
         shutil.copytree(data_src, data_dest)
 
     # docs
@@ -35,7 +36,7 @@ def push_to_local(output_dir: Path, dist_dir: Path, datasource: str) -> None:
         for name in ("index.html", "manifest.json", "catalog.json"):
             src = docs_src / name
             if src.exists():
-                print(f"  {datasource}/docs/{name}")
+                console.print(f"  [dim]{datasource}/docs/{name}[/dim]")
                 shutil.copy2(src, docs_dest / name)
 
 
@@ -54,7 +55,7 @@ def _upload(
     if cache_control:
         extra_args["CacheControl"] = cache_control
 
-    print(f"  {key}")
+    console.print(f"  [dim]{key}[/dim]")
     client.upload_file(str(file_path), bucket, key, ExtraArgs=extra_args or None)
 
 

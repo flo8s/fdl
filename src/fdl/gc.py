@@ -8,6 +8,7 @@ import duckdb
 
 from fdl import DUCKLAKE_FILE, ducklake_data_path
 from fdl.config import datasource_name, s3_access_key_id, s3_endpoint, s3_secret_access_key
+from fdl.console import console
 from fdl.s3 import create_s3_client
 
 
@@ -102,7 +103,7 @@ def gc_datasource(
 ) -> None:
     """Clean up orphaned Parquet files for a datasource."""
     datasource = datasource_name(dataset_dir)
-    print(f"--- gc: {datasource} ---")
+    console.print(f"[bold]--- gc: {datasource} ---[/bold]")
 
     ducklake_file = dist_dir / DUCKLAKE_FILE
     if not ducklake_file.exists():
@@ -112,8 +113,8 @@ def gc_datasource(
 
     # Step 1: Handle files scheduled for deletion by DuckLake
     scheduled = _count_scheduled_files(ducklake_file)
-    print(
-        f"[Step 1] ducklake_cleanup_old_files: {scheduled} files scheduled for deletion"
+    console.print(
+        f"\\[Step 1] ducklake_cleanup_old_files: [bold]{scheduled}[/bold] files scheduled for deletion"
     )
 
     # Step 2: Find orphaned files on R2
@@ -136,35 +137,35 @@ def gc_datasource(
     orphaned_size = sum(obj["Size"] for obj in orphaned.values())
 
     if not orphaned:
-        print("[Step 2] No orphaned files found.")
+        console.print("\\[Step 2] No orphaned files found.")
         return
 
-    print("[Step 2] Orphaned files on R2:")
+    console.print("\\[Step 2] Orphaned files on R2:")
     for rel_path in sorted(orphaned):
-        print(f"  {prefix}{rel_path}")
-    print(f"\n  Active: {len(active_files)} files")
-    print(f"  R2 total: {len(r2_files)} files")
-    print(f"  Orphaned: {len(orphaned)} files ({_format_size(orphaned_size)})")
+        console.print(f"  [dim]{prefix}{rel_path}[/dim]")
+    console.print(f"\n  Active: [bold]{len(active_files)}[/bold] files")
+    console.print(f"  R2 total: [bold]{len(r2_files)}[/bold] files")
+    console.print(f"  Orphaned: [bold]{len(orphaned)}[/bold] files ({_format_size(orphaned_size)})")
 
     if dry_run:
         return
 
     # Confirm deletion
     if not force:
-        answer = input(f"\nDelete {len(orphaned)} files? [y/N] ")
+        answer = console.input(f"\nDelete {len(orphaned)} files? \\[y/N] ")
         if answer.lower() not in ("y", "yes"):
-            print("Aborted.")
+            console.print("[red]Aborted.[/red]")
             return
 
     # Step 1 actual: Run ducklake_cleanup_old_files
     if scheduled > 0:
         cleanup_count = _cleanup_scheduled_files(ducklake_file, datasource, bucket)
-        print(f"\nducklake_cleanup_old_files: {cleanup_count} files deleted")
+        console.print(f"\nducklake_cleanup_old_files: [bold]{cleanup_count}[/bold] files deleted")
 
     # Delete orphaned files in batches (S3 limit: 1000 per request)
-    print(f"Deleting {len(orphaned)} orphaned files...")
+    console.print(f"Deleting {len(orphaned)} orphaned files...")
     keys = [{"Key": f"{prefix}{p}"} for p in orphaned]
     for i in range(0, len(keys), 1000):
         batch = keys[i : i + 1000]
         client.delete_objects(Bucket=bucket, Delete={"Objects": batch})
-    print(f"Deleted {len(orphaned)} files ({_format_size(orphaned_size)}).")
+    console.print(f"[green]Deleted {len(orphaned)} files ({_format_size(orphaned_size)}).[/green]")

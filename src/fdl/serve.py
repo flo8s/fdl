@@ -6,6 +6,8 @@ from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
+from fdl.console import console
+
 
 class CORSRangeHandler(SimpleHTTPRequestHandler):
     """HTTP handler with CORS headers and Range request support."""
@@ -69,9 +71,9 @@ def run_server(directory: Path, port: int) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     handler = partial(CORSRangeHandler, directory=str(directory))
     server = HTTPServer(("", port), handler)
-    print(f"Serving {directory} at http://localhost:{port}")
+    console.print(f"Serving {directory} at [bold]http://localhost:{port}[/bold]")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down.")
+        console.print("\nShutting down.")
         server.server_close()

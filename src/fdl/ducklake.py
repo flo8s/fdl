@@ -8,6 +8,7 @@ from pathlib import Path
 import duckdb
 
 from fdl import FDL_DIR, DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
+from fdl.console import console
 
 
 @contextmanager
@@ -120,7 +121,7 @@ def init_ducklake(dist_dir: Path, dataset_dir: Path, *, sqlite: bool = False) ->
     datasource = datasource_name(dataset_dir)
     data_path = ducklake_data_path(ducklake_url(datasource))
     meta_type = "sqlite" if sqlite else "duckdb"
-    print(f"Creating DuckLake ({meta_type}): {datasource} (DATA_PATH: {data_path})")
+    console.print(f"Creating DuckLake ({meta_type}): {datasource} (DATA_PATH: [dim]{data_path}[/dim])")
 
     dist_dir.mkdir(parents=True, exist_ok=True)
 
@@ -148,7 +149,7 @@ def convert_sqlite_to_duckdb(dataset_dir: Path) -> None:
     datasource = datasource_name(dataset_dir)
     data_path = ducklake_data_path(ducklake_url(datasource))
 
-    print("Converting DuckLake: SQLite -> DuckDB")
+    console.print("Converting DuckLake: SQLite -> DuckDB")
     SRC = "src"
     DST = "dst"
     tmp_file = duckdb_file.with_suffix(".duckdb.tmp")

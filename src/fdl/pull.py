@@ -6,6 +6,7 @@ from pathlib import Path
 from botocore.exceptions import ClientError
 
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, METADATA_JSON
+from fdl.console import console
 
 
 def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
@@ -22,7 +23,7 @@ def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
     for name in [DUCKLAKE_FILE, DUCKLAKE_SQLITE, METADATA_JSON]:
         src_file = src / name
         if src_file.exists():
-            print(f"  {datasource}/{name}")
+            console.print(f"  [dim]{datasource}/{name}[/dim]")
             shutil.copy2(src_file, dist_dir / name)
 
     return True
@@ -31,12 +32,12 @@ def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
 def _download_file(client, bucket: str, key: str, dest: Path) -> bool:
     """Download a single file. Returns True if successful, False if 404."""
     try:
-        print(f"  {key}")
+        console.print(f"  [dim]{key}[/dim]")
         client.download_file(bucket, key, str(dest))
         return True
     except ClientError as e:
         if e.response["Error"]["Code"] == "404":
-            print(f"  {key} not found, skipping")
+            console.print(f"  [yellow]{key} not found, skipping[/yellow]")
             return False
         raise
 

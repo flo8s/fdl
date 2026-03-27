@@ -7,6 +7,7 @@ import typer
 from typer.main import Typer
 
 from fdl import FDL_DIR
+from fdl.console import console
 
 app = typer.Typer(pretty_exceptions_short=True)
 
@@ -25,7 +26,7 @@ def _version_callback(value: bool) -> None:
     if value:
         from importlib.metadata import version
 
-        print(f"fdl {version('frozen-ducklake')}")
+        console.print(f"fdl {version('frozen-ducklake')}", highlight=False)
         raise typer.Exit()
 
 
@@ -92,7 +93,7 @@ def init(
     else:
         gitignore.write_text(f"{marker}\n")
 
-    print(f"Initialized fdl project: {name}")
+    console.print(f"[green]Initialized fdl project: {name}[/green]")
 
 
 @app.command()
@@ -108,7 +109,7 @@ def pull(
     dist_dir = dataset_dir / FDL_DIR
     datasource = datasource_name(dataset_dir)
     resolved = _resolve_remote(source)
-    print(f"--- pull: {datasource} ← {resolved} ---")
+    console.print(f"[bold]--- pull: {datasource} ← {resolved} ---[/bold]")
 
     if resolved.startswith("s3://"):
         from fdl.pull import fetch_from_s3
@@ -138,7 +139,7 @@ def push(
     datasource = datasource_name(dataset_dir)
 
     resolved = _resolve_remote(dest)
-    print(f"--- push: {datasource} → {resolved} ---")
+    console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
     convert_sqlite_to_duckdb(dataset_dir)
 
     if resolved.startswith("s3://"):
@@ -281,7 +282,7 @@ def config_cmd(
 
     if _list:
         for k, v in get_all(target).items():
-            print(f"{k}={v}")
+            console.print(f"{k}={v}", highlight=False)
         return
 
     if key is None:
@@ -295,7 +296,7 @@ def config_cmd(
         result = data.get(section, {}).get(name)
         if result is None:
             raise SystemExit(1)
-        print(result)
+        console.print(result, highlight=False)
 
 
 @app.command()
