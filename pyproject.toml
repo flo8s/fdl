@@ -1,7 +1,7 @@
 [project]
 name = "frozen-ducklake"
 version = "0.4.0"
-description = "Frozen Data Lake - DuckLake catalog management CLI"
+description = "Frozen DuckLake CLI"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -29,7 +29,9 @@ packages = ["src/fdl"]
 dev = [
     "pytest>=9.0.2",
 ]
-docs = ["mkdocs-material>=9"]
+docs = [
+    "zensical>=0.0.29",
+]
 
 [project.scripts]
 fdl = "fdl.cli:main"
