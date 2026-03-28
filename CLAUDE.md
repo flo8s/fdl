@@ -6,7 +6,7 @@
 uv sync
 uv run fdl --help
 uv run pytest
-uv run --group docs zensical serve
+uv run zensical serve
 ```
 
 ## Code style
@@ -25,6 +25,5 @@ Releases are handled by python-semantic-release via GitHub Actions (manual workf
 
 ## Project structure
 
-- `src/fdl/` — main package (cli.py, config.py, ducklake.py, pull.py, push.py, gc.py, etc.)
-- `packages/fdl_common/` — shared dbt macros
+- `src/fdl/` — main package (cli.py, config.py, ducklake.py, pull.py, push.py, prune.py, etc.)
 - `docs/` — Zensical documentation source

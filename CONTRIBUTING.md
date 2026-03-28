@@ -21,18 +21,15 @@ uv run pytest
 src/fdl/
 ├── cli.py            — Typer CLI entry point
 ├── config.py         — 3-layer config resolution (env → workspace → user)
-├── config_schema.py  — Configuration schema definitions
 ├── ducklake.py       — DuckLake catalog operations
-├── pull.py           — Pull remote catalog to local
-├── push.py           — Push local catalog to remote
-├── gc.py             — Garbage collection for orphaned files
-├── metadata.py       — dbt artifact metadata generation
+├── pull.py           — Pull catalog from target
+├── push.py           — Push catalog to target
+├── prune.py          — Prune orphaned data files on target storage
 ├── serve.py          — Local HTTP server with CORS + Range support
 ├── s3.py             — S3 storage operations
 └── console.py        — Console output utilities
 
-packages/fdl_common/  — Shared dbt macros
-docs/                 — MkDocs Material documentation source
+docs/                 — Zensical documentation source
 ```
 
 ## Commit conventions
@@ -54,15 +51,15 @@ Do not manually edit the version in pyproject.toml or modify CHANGELOG.md — th
 
 ## Documentation
 
-Documentation is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and deployed to [fdl.flo8s.com](https://fdl.flo8s.com/).
+Documentation is built with [Zensical](https://zensical.com/) and deployed to [fdl.flo8s.com](https://fdl.flo8s.com/).
 
 To preview locally:
 
 ```bash
-uv run --group docs mkdocs serve
+uv run zensical serve
 ```
 
-Documentation deploys automatically on push to main when files under `docs/`, `mkdocs.yml`, or `CHANGELOG.md` change.
+Documentation deploys automatically on push to main when files under `docs/` or `CHANGELOG.md` change.
 
 ## Code style
 
