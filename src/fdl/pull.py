@@ -3,9 +3,7 @@
 import shutil
 from pathlib import Path
 
-from botocore.exceptions import ClientError
-
-from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, METADATA_JSON
+from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE
 from fdl.console import console
 
 
@@ -20,7 +18,7 @@ def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
 
     dist_dir.mkdir(parents=True, exist_ok=True)
 
-    for name in [DUCKLAKE_FILE, DUCKLAKE_SQLITE, METADATA_JSON]:
+    for name in [DUCKLAKE_FILE, DUCKLAKE_SQLITE]:
         src_file = src / name
         if src_file.exists():
             console.print(f"  [dim]{datasource}/{name}[/dim]")
@@ -31,6 +29,8 @@ def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
 
 def _download_file(client, bucket: str, key: str, dest: Path) -> bool:
     """Download a single file. Returns True if successful, False if 404."""
+    from botocore.exceptions import ClientError
+
     try:
         console.print(f"  [dim]{key}[/dim]")
         client.download_file(bucket, key, str(dest))
@@ -54,9 +54,6 @@ def fetch_from_s3(client, bucket: str, dist_dir: Path, datasource: str) -> bool:
     )
     _download_file(
         client, bucket, f"{datasource}/{DUCKLAKE_SQLITE}", dist_dir / DUCKLAKE_SQLITE
-    )
-    _download_file(
-        client, bucket, f"{datasource}/{METADATA_JSON}", dist_dir / METADATA_JSON
     )
 
     return found

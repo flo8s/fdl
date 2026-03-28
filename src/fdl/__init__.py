@@ -1,8 +1,6 @@
 import os
 from pathlib import Path
 
-DATASET_YML = "dataset.yml"
-METADATA_JSON = "metadata.json"
 FDL_DIR = Path(".fdl")
 DUCKLAKE_FILE = "ducklake.duckdb"
 DUCKLAKE_SQLITE = "ducklake.sqlite"
@@ -13,11 +11,15 @@ def ducklake_data_path(catalog_url: str) -> str:
     return f"{catalog_url}.files/"
 
 
-def user_dir() -> Path:
-    """User-level fdl directory ($XDG_STATE_HOME/fdl or ~/.fdl)."""
-    xdg = os.environ.get("XDG_STATE_HOME")
-    if xdg:
-        return Path(xdg) / "fdl"
-    return Path.home() / ".fdl"
+def default_target_url() -> str:
+    """Default target URL ($XDG_DATA_HOME/fdl or ~/.local/share/fdl).
 
-
+    Returns a display-friendly path using ~ when under the home directory.
+    """
+    xdg = os.environ.get("XDG_DATA_HOME")
+    result = Path(xdg, "fdl") if xdg else Path.home() / ".local" / "share" / "fdl"
+    home = Path.home()
+    try:
+        return str(Path("~") / result.relative_to(home))
+    except ValueError:
+        return str(result)

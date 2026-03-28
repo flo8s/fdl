@@ -1,15 +1,19 @@
-"""GC: clean up orphaned Parquet files on R2."""
+"""Prune orphaned data files on target storage."""
 
-import os
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 
 from fdl import DUCKLAKE_FILE, ducklake_data_path
-from fdl.config import datasource_name, s3_access_key_id, s3_endpoint, s3_secret_access_key
+from fdl.config import datasource_name
 from fdl.console import console
-from fdl.s3 import create_s3_client
+
+if TYPE_CHECKING:
+    from fdl.s3 import S3Config
 
 
 def _format_size(size_bytes: int) -> str:
@@ -36,20 +40,16 @@ def _count_scheduled_files(ducklake_file: Path) -> int:
 
 
 def _cleanup_scheduled_files(
-    ducklake_file: Path, datasource: str, bucket: str
+    ducklake_file: Path, datasource: str, s3: "S3Config"
 ) -> int:
     """Run ducklake_cleanup_old_files to delete scheduled files from R2."""
-    data_path = ducklake_data_path(f"s3://{bucket}/{datasource}/{DUCKLAKE_FILE}")
+    data_path = ducklake_data_path(f"s3://{s3.bucket}/{datasource}/{DUCKLAKE_FILE}")
     conn = duckdb.connect(":memory:")
     try:
         conn.execute("INSTALL ducklake; LOAD ducklake;")
-        conn.execute("INSTALL httpfs; LOAD httpfs;")
-        conn.execute(f"""
-            SET s3_endpoint = '{s3_endpoint().removeprefix("https://")}';
-            SET s3_access_key_id = '{s3_access_key_id()}';
-            SET s3_secret_access_key = '{s3_secret_access_key()}';
-            SET s3_region = 'auto';
-        """)
+        from fdl.s3 import configure_duckdb_s3
+
+        configure_duckdb_s3(conn, s3)
         conn.execute(f"""
             ATTACH '{ducklake_file}' AS {datasource} (
                 TYPE ducklake,
@@ -87,29 +87,27 @@ def _list_r2_files(client, bucket: str, prefix: str) -> dict[str, dict]:
     paginator = client.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
-            relative_path = obj["Key"][len(prefix):]
+            relative_path = obj["Key"][len(prefix) :]
             r2_files[relative_path] = obj
     return r2_files
 
 
-def gc_datasource(
+def prune_datasource(
     dataset_dir: Path,
     dist_dir: Path,
     *,
-    bucket: str,
+    s3: "S3Config",
     force: bool = False,
     dry_run: bool = False,
     older_than_days: int | None = None,
 ) -> None:
     """Clean up orphaned Parquet files for a datasource."""
     datasource = datasource_name(dataset_dir)
-    console.print(f"[bold]--- gc: {datasource} ---[/bold]")
+    console.print(f"[bold]--- prune: {datasource} ---[/bold]")
 
     ducklake_file = dist_dir / DUCKLAKE_FILE
     if not ducklake_file.exists():
-        raise FileNotFoundError(
-            f"{ducklake_file} not found. Run 'fdl pull' first."
-        )
+        raise FileNotFoundError(f"{ducklake_file} not found. Run 'fdl pull' first.")
 
     # Step 1: Handle files scheduled for deletion by DuckLake
     scheduled = _count_scheduled_files(ducklake_file)
@@ -120,9 +118,11 @@ def gc_datasource(
     # Step 2: Find orphaned files on R2
     active_files = _get_active_files(ducklake_file)
 
-    client = create_s3_client()
+    from fdl.s3 import create_s3_client
+
+    client = create_s3_client(s3)
     prefix = f"{datasource}/{ducklake_data_path(DUCKLAKE_FILE)}"
-    r2_files = _list_r2_files(client, bucket, prefix)
+    r2_files = _list_r2_files(client, s3.bucket, prefix)
 
     orphaned = {}
     for rel_path, obj in r2_files.items():
@@ -145,7 +145,9 @@ def gc_datasource(
         console.print(f"  [dim]{prefix}{rel_path}[/dim]")
     console.print(f"\n  Active: [bold]{len(active_files)}[/bold] files")
     console.print(f"  R2 total: [bold]{len(r2_files)}[/bold] files")
-    console.print(f"  Orphaned: [bold]{len(orphaned)}[/bold] files ({_format_size(orphaned_size)})")
+    console.print(
+        f"  Orphaned: [bold]{len(orphaned)}[/bold] files ({_format_size(orphaned_size)})"
+    )
 
     if dry_run:
         return
@@ -159,13 +161,17 @@ def gc_datasource(
 
     # Step 1 actual: Run ducklake_cleanup_old_files
     if scheduled > 0:
-        cleanup_count = _cleanup_scheduled_files(ducklake_file, datasource, bucket)
-        console.print(f"\nducklake_cleanup_old_files: [bold]{cleanup_count}[/bold] files deleted")
+        cleanup_count = _cleanup_scheduled_files(ducklake_file, datasource, s3)
+        console.print(
+            f"\nducklake_cleanup_old_files: [bold]{cleanup_count}[/bold] files deleted"
+        )
 
     # Delete orphaned files in batches (S3 limit: 1000 per request)
     console.print(f"Deleting {len(orphaned)} orphaned files...")
     keys = [{"Key": f"{prefix}{p}"} for p in orphaned]
     for i in range(0, len(keys), 1000):
         batch = keys[i : i + 1000]
-        client.delete_objects(Bucket=bucket, Delete={"Objects": batch})
-    console.print(f"[green]Deleted {len(orphaned)} files ({_format_size(orphaned_size)}).[/green]")
+        client.delete_objects(Bucket=s3.bucket, Delete={"Objects": batch})
+    console.print(
+        f"[green]Deleted {len(orphaned)} files ({_format_size(orphaned_size)}).[/green]"
+    )

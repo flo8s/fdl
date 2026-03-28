@@ -1,13 +1,12 @@
 """DuckLake catalog management."""
 
-import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
 import duckdb
 
-from fdl import FDL_DIR, DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
+from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, ducklake_data_path
 from fdl.console import console
 
 
@@ -15,14 +14,33 @@ from fdl.console import console
 def connect(
     *,
     storage: str | None = None,
+    target_name: str | None = None,
 ) -> Generator[duckdb.DuckDBPyConnection]:
     """Connect to the DuckLake catalog and return a DuckDB connection.
 
-    Dataset name is auto-detected from dataset.yml (or cwd directory name).
-    Data file path is controlled by FDL_STORAGE env var (default: .fdl).
+    Opens an in-memory DuckDB connection, loads the DuckLake extension,
+    and ATTACHes the local catalog (`.fdl/ducklake.duckdb`) with the
+    correct `DATA_PATH` and `OVERRIDE_DATA_PATH`.
+
+    When `storage` points to an S3 path, httpfs is loaded and S3 credentials
+    are configured from the target config.
 
     Args:
-        storage: Base path for data files. Reads from env var if omitted.
+        storage: Base path for data files.
+            Defaults to `FDL_STORAGE` env var, then `.fdl`.
+        target_name: Target name for S3 credential resolution.
+
+    Yields:
+        A DuckDB connection with the DuckLake catalog attached as the
+        dataset name (from `fdl.toml`).
+
+    Raises:
+        FileNotFoundError: If `.fdl/ducklake.duckdb` does not exist.
+
+    Examples:
+        >>> from fdl.ducklake import connect
+        >>> with connect(storage="/tmp/fdl/mydata", target_name="default") as conn:
+        ...     conn.execute("CREATE TABLE cities (name VARCHAR, pop INTEGER)")
     """
     from fdl.config import datasource_name
 
@@ -39,20 +57,20 @@ def connect(
         storage = get_storage()
     data_path = ducklake_data_path(f"{storage}/{DUCKLAKE_FILE}")
 
+    # Ensure local storage directory exists for data file writes
+    if not storage.startswith("s3://"):
+        Path(data_path).mkdir(parents=True, exist_ok=True)
+
     conn = duckdb.connect()
     try:
         conn.execute("INSTALL ducklake; LOAD ducklake;")
         if storage.startswith("s3://"):
-            conn.execute("INSTALL httpfs; LOAD httpfs;")
-            from fdl.config import s3_access_key_id, s3_endpoint, s3_secret_access_key
+            from fdl.config import target_s3_config
+            from fdl.s3 import configure_duckdb_s3
 
-            conn.execute(f"""
-                SET s3_url_style = 'path';
-                SET s3_access_key_id = '{s3_access_key_id()}';
-                SET s3_secret_access_key = '{s3_secret_access_key()}';
-                SET s3_endpoint = '{s3_endpoint().removeprefix("https://")}';
-                SET s3_region = 'auto';
-            """)
+            if not target_name:
+                raise ValueError("target_name is required for S3 storage")
+            configure_duckdb_s3(conn, target_s3_config(target_name))
         conn.execute(f"""
             ATTACH 'ducklake:{ducklake_path}' AS {name} (
                 DATA_PATH '{data_path}',
@@ -64,64 +82,22 @@ def connect(
         conn.close()
 
 
-def create_destination(storage_path: str | None = None):
-    """Create a dlt DuckLake destination.
-
-    Args:
-        storage_path: Base path for data files. Resolved from FDL_STORAGE
-            env var / config if omitted. S3 paths read credentials from fdl config.
-    """
-    from dlt.common.storages.configuration import FilesystemConfiguration
-    from dlt.destinations import ducklake
-    from dlt.destinations.impl.ducklake.configuration import DuckLakeCredentials
-
-    if storage_path is None:
-        from fdl.config import storage as get_storage
-
-        storage_path = get_storage()
-
-    FDL_DIR.mkdir(exist_ok=True)
-    ducklake_path = f"{storage_path}/{DUCKLAKE_FILE}"
-    storage_url = ducklake_data_path(ducklake_path)
-
-    if storage_path.startswith("s3://"):
-        from dlt.common.configuration.specs.aws_credentials import AwsCredentials
-
-        from fdl.config import s3_access_key_id, s3_endpoint, s3_secret_access_key
-
-        storage = FilesystemConfiguration(
-            bucket_url=storage_url,
-            credentials=AwsCredentials(
-                aws_access_key_id=s3_access_key_id(),
-                aws_secret_access_key=s3_secret_access_key(),
-                endpoint_url=s3_endpoint(),
-                region_name="auto",
-            ),
-        )
-    else:
-        storage = storage_url
-
-    return ducklake(
-        credentials=DuckLakeCredentials(
-            catalog=f"sqlite:///{FDL_DIR / DUCKLAKE_SQLITE}",
-            storage=storage,
-        ),
-        override_data_path=True,
-    )
-
-
-def init_ducklake(dist_dir: Path, dataset_dir: Path, *, sqlite: bool = False) -> None:
+def init_ducklake(
+    dist_dir: Path, dataset_dir: Path, *, public_url: str, sqlite: bool = False
+) -> None:
     """Initialize DuckLake catalog (skip if exists)."""
     catalog_file = dist_dir / (DUCKLAKE_SQLITE if sqlite else DUCKLAKE_FILE)
     if catalog_file.exists():
         return
 
-    from fdl.config import datasource_name, ducklake_url
+    from fdl.config import datasource_name
 
     datasource = datasource_name(dataset_dir)
-    data_path = ducklake_data_path(ducklake_url(datasource))
+    data_path = ducklake_data_path(f"{public_url}/{datasource}/{DUCKLAKE_FILE}")
     meta_type = "sqlite" if sqlite else "duckdb"
-    console.print(f"Creating DuckLake ({meta_type}): {datasource} (DATA_PATH: [dim]{data_path}[/dim])")
+    console.print(
+        f"Creating DuckLake ({meta_type}): {datasource} (DATA_PATH: [dim]{data_path}[/dim])"
+    )
 
     dist_dir.mkdir(parents=True, exist_ok=True)
 
@@ -144,10 +120,7 @@ def convert_sqlite_to_duckdb(dataset_dir: Path) -> None:
     if not sqlite_file.exists():
         return
 
-    from fdl.config import datasource_name, ducklake_url
-
-    datasource = datasource_name(dataset_dir)
-    data_path = ducklake_data_path(ducklake_url(datasource))
+    data_path = ducklake_data_path(str(dist_dir / DUCKLAKE_FILE))
 
     console.print("Converting DuckLake: SQLite -> DuckDB")
     SRC = "src"

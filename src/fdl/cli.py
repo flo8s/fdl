@@ -1,6 +1,7 @@
 """fdl CLI entry point."""
 
 import os
+import re
 from pathlib import Path
 
 import typer
@@ -9,15 +10,23 @@ from typer.main import Typer
 from fdl import FDL_DIR
 from fdl.console import console
 
-app = typer.Typer(pretty_exceptions_short=True)
+app = typer.Typer(pretty_exceptions_short=True, invoke_without_command=True)
 
 
-def _resolve_remote(name: str) -> str:
-    """Resolve a remote name, converting ValueError to BadParameter."""
-    from fdl.config import resolve_remote
+def _sanitize_name(name: str) -> str:
+    """Sanitize a directory name into a valid SQL identifier."""
+    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    if name and name[0].isdigit():
+        name = f"_{name}"
+    return name
+
+
+def _resolve_target(name: str) -> str:
+    """Resolve a target name, converting ValueError to BadParameter."""
+    from fdl.config import resolve_target
 
     try:
-        return resolve_remote(name, Path.cwd())
+        return resolve_target(name, Path.cwd())
     except ValueError as e:
         raise typer.BadParameter(str(e)) from None
 
@@ -33,47 +42,77 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def callback(
     version: bool = typer.Option(
-        False, "--version", "-V", callback=_version_callback, is_eager=True,
+        False,
+        "--version",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
         help="Show version and exit",
     ),
 ) -> None:
     """fdl: DuckLake catalog management CLI"""
+    import click
+
+    ctx = click.get_current_context()
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
 @app.command()
 def init(
-    name: str = typer.Argument(..., help="Datasource name"),
+    name: str = typer.Argument(
+        None, help="Datasource name (default: current directory name)"
+    ),
+    public_url: str = typer.Option(
+        None, "--public-url", help="Public URL for dataset access"
+    ),
+    target_url: str = typer.Option(
+        None, "--target-url", help="Target URL for push/pull"
+    ),
+    target_name: str = typer.Option(None, "--target-name", help="Target name"),
     sqlite: bool = typer.Option(
         False, help="Use SQLite catalog (for dlt compatibility)"
     ),
 ) -> None:
-    """Initialize a new fdl project (like git init)."""
+    """Initialize a new fdl project."""
     import shutil
 
-    from fdl.config import PROJECT_CONFIG, public_url, set_value
+    from fdl import default_target_url
+    from fdl.config import PROJECT_CONFIG, set_value
     from fdl.ducklake import init_ducklake
 
     dataset_dir = Path.cwd()
+    if name:
+        sanitized = _sanitize_name(name)
+        if sanitized != name:
+            raise typer.BadParameter(
+                f"'{name}' is not a valid SQL identifier. Use '{sanitized}' instead."
+            )
+    else:
+        name = _sanitize_name(dataset_dir.resolve().name)
     dist_dir = dataset_dir / FDL_DIR
     config_path = dataset_dir / PROJECT_CONFIG
 
     if config_path.exists():
         raise typer.BadParameter(f"{PROJECT_CONFIG} already exists")
 
-    # Validate prerequisites
-    try:
-        public_url()
-    except KeyError as e:
-        raise typer.BadParameter(str(e)) from None
+    # Prompt for target config if not provided via flags
+    if target_name is None:
+        target_name = typer.prompt("Target name", default="default")
+    if public_url is None:
+        public_url = typer.prompt("Public URL", default="http://localhost:4001")
+    if target_url is None:
+        target_url = typer.prompt("Target URL", default=default_target_url())
 
     try:
         # fdl.toml
         set_value("name", name, config_path)
-        if sqlite:
-            set_value("catalog", "sqlite", config_path)
+        set_value("catalog", "sqlite" if sqlite else "duckdb", config_path)
+        set_value(f"targets.{target_name}.url", target_url, config_path)
+        set_value(f"targets.{target_name}.public_url", public_url, config_path)
 
         # .fdl/ + DuckLake catalog
-        init_ducklake(dist_dir, dataset_dir, sqlite=sqlite)
+        init_ducklake(dist_dir, dataset_dir, public_url=public_url, sqlite=sqlite)
 
     except Exception:
         # Rollback: remove partially created files
@@ -83,41 +122,30 @@ def init(
             shutil.rmtree(dist_dir)
         raise
 
-    # Idempotent — no rollback needed
-    gitignore = dataset_dir / ".gitignore"
-    marker = ".fdl/"
-    if gitignore.exists():
-        content = gitignore.read_text()
-        if marker not in content:
-            gitignore.write_text(content.rstrip() + f"\n{marker}\n")
-    else:
-        gitignore.write_text(f"{marker}\n")
-
     console.print(f"[green]Initialized fdl project: {name}[/green]")
 
 
 @app.command()
 def pull(
-    source: str = typer.Argument(
-        ..., help="Remote name (e.g. origin)"
-    ),
+    source: str = typer.Argument(..., help="Target name (e.g. default)"),
 ) -> None:
-    """Pull DuckLake catalog from source."""
+    """Pull DuckLake catalog from a target."""
     from fdl.config import datasource_name
 
     dataset_dir = Path.cwd()
     dist_dir = dataset_dir / FDL_DIR
     datasource = datasource_name(dataset_dir)
-    resolved = _resolve_remote(source)
+    resolved = _resolve_target(source)
     console.print(f"[bold]--- pull: {datasource} ← {resolved} ---[/bold]")
 
     if resolved.startswith("s3://"):
+        from fdl.config import target_s3_config
         from fdl.pull import fetch_from_s3
         from fdl.s3 import create_s3_client
 
-        bucket = resolved.removeprefix("s3://")
-        client = create_s3_client()
-        fetch_from_s3(client, bucket, dist_dir, datasource)
+        s3 = target_s3_config(source)
+        client = create_s3_client(s3)
+        fetch_from_s3(client, s3.bucket, dist_dir, datasource)
     else:
         from fdl.pull import pull_from_local
 
@@ -126,11 +154,9 @@ def pull(
 
 @app.command()
 def push(
-    dest: str = typer.Argument(
-        ..., help="Remote name (e.g. origin, local)"
-    ),
+    dest: str = typer.Argument(..., help="Target name (e.g. default)"),
 ) -> None:
-    """Push build artifacts"""
+    """Push catalog to a target."""
     from fdl.config import datasource_name
     from fdl.ducklake import convert_sqlite_to_duckdb
 
@@ -138,35 +164,22 @@ def push(
     dist_dir = dataset_dir / FDL_DIR
     datasource = datasource_name(dataset_dir)
 
-    resolved = _resolve_remote(dest)
+    resolved = _resolve_target(dest)
     console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
     convert_sqlite_to_duckdb(dataset_dir)
 
     if resolved.startswith("s3://"):
+        from fdl.config import target_s3_config
         from fdl.push import push_to_s3
         from fdl.s3 import create_s3_client
 
-        bucket = resolved.removeprefix("s3://")
-        client = create_s3_client()
-        push_to_s3(client, bucket, dist_dir, datasource)
+        s3 = target_s3_config(dest)
+        client = create_s3_client(s3)
+        push_to_s3(client, s3.bucket, dist_dir, datasource, dataset_dir)
     else:
         from fdl.push import push_to_local
 
-        push_to_local(Path(resolved), dist_dir, datasource)
-
-
-@app.command()
-def metadata(
-    target_dir: str = typer.Argument("target", help="dbt target directory path"),
-) -> None:
-    """Generate metadata.json from dbt artifacts"""
-    from fdl.metadata import _copy_docs_to_dist, generate_metadata
-
-    dataset_dir = Path.cwd()
-    dist_dir = dataset_dir / FDL_DIR
-    target_path = Path(target_dir)
-    generate_metadata(dataset_dir, dist_dir, target_path)
-    _copy_docs_to_dist(target_path, dist_dir)
+        push_to_local(Path(resolved), dist_dir, datasource, dataset_dir)
 
 
 @app.command(
@@ -176,30 +189,26 @@ def run(ctx: typer.Context) -> None:
     """Run a command with fdl environment variables.
 
     \b
-    Sets FDL_STORAGE, FDL_DATA_PATH, FDL_ATTACH_PATH, FDL_S3_*:
-      fdl run -- COMMAND [ARGS...]           # local (.fdl)
-      fdl run REMOTE -- COMMAND [ARGS...]    # remote storage
+    Sets FDL_STORAGE, FDL_DATA_PATH, FDL_CATALOG, FDL_S3_*:
+      fdl run TARGET -- COMMAND [ARGS...]
     """
     import subprocess
 
     from fdl.config import datasource_name, fdl_env_dict
 
-    remote, cmd = _parse_run_args(ctx.args)
+    target, cmd = _parse_run_args(ctx.args)
 
     if not cmd:
         raise typer.BadParameter(
-            "No command specified. Usage: fdl run [REMOTE] -- COMMAND"
+            "No command specified. Usage: fdl run TARGET -- COMMAND"
         )
 
-    # Compute storage for remote target
-    storage_val = None
-    if remote:
-        resolved = _resolve_remote(remote)
-        storage_val = f"{resolved}/{datasource_name()}"
+    resolved = _resolve_target(target)
+    storage_val = f"{resolved}/{datasource_name()}"
 
     # Build env with all FDL_* values (won't override existing env vars)
     env = os.environ.copy()
-    for key, value in fdl_env_dict(storage_override=storage_val).items():
+    for key, value in fdl_env_dict(target_name=target, storage_override=storage_val).items():
         if key not in env:
             env[key] = value
 
@@ -207,55 +216,46 @@ def run(ctx: typer.Context) -> None:
     raise SystemExit(result.returncode)
 
 
-def _parse_run_args(args: list[str]) -> tuple[str | None, list[str]]:
-    """Parse [REMOTE] -- COMMAND from raw args.
-
-    Without "--": all args are the command (local mode).
-    With "--": at most one arg before it is the remote name.
-    """
+def _parse_run_args(args: list[str]) -> tuple[str, list[str]]:
+    """Parse TARGET -- COMMAND from raw args."""
     if "--" not in args:
-        return None, list(args)
+        raise typer.BadParameter("Usage: fdl run TARGET -- COMMAND")
 
     idx = args.index("--")
-    before, cmd = args[:idx], args[idx + 1:]
+    before, cmd = args[:idx], args[idx + 1 :]
 
-    # At most one remote name before "--"
-    if len(before) > 1:
-        raise typer.BadParameter(
-            f"Expected at most one remote name before --, got: {' '.join(before)}"
-        )
-    remote = before[0] if before else None
-    return remote, cmd
+    if len(before) != 1:
+        raise typer.BadParameter("Usage: fdl run TARGET -- COMMAND")
+    return before[0], cmd
 
 
 @app.command()
-def gc(
-    remote: str = typer.Argument(..., help="Remote name (e.g. origin)"),
+def prune(
+    target: str = typer.Argument(..., help="Target name (e.g. default)"),
     dry_run: bool = typer.Option(
         False, "--dry-run", "-n", help="List orphaned files without deleting"
     ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip confirmation prompt"
-    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
     older_than_days: int = typer.Option(
         None, "--older-than", help="Only target files older than N days"
     ),
 ) -> None:
-    """Clean up orphaned data files on remote storage."""
-    from fdl.gc import gc_datasource
+    """Clean up orphaned data files on target storage."""
+    from fdl.config import target_s3_config
+    from fdl.prune import prune_datasource
 
     dataset_dir = Path.cwd()
     dist_dir = dataset_dir / FDL_DIR
 
-    resolved = _resolve_remote(remote)
+    resolved = _resolve_target(target)
     if not resolved.startswith("s3://"):
-        raise typer.BadParameter("gc only supports S3 remotes")
+        raise typer.BadParameter("prune only supports S3 targets")
 
-    bucket = resolved.removeprefix("s3://")
-    gc_datasource(
+    s3 = target_s3_config(target)
+    prune_datasource(
         dataset_dir,
         dist_dir,
-        bucket=bucket,
+        s3=s3,
         force=force,
         dry_run=dry_run,
         older_than_days=older_than_days,
@@ -264,58 +264,85 @@ def gc(
 
 @app.command("config")
 def config_cmd(
-    key: str = typer.Argument(None, help="Config key (e.g. 's3.endpoint')"),
+    key: str = typer.Argument(None, help="Config key (e.g. 'targets.default.url')"),
     value: str = typer.Argument(None, help="Value to set"),
-    _list: bool = typer.Option(False, "--list", "-l", help="List all settings"),
-    local: bool = typer.Option(False, "--local", help="Use project config (fdl.toml)"),
 ) -> None:
-    """Get or set fdl configuration."""
+    """Get or set fdl configuration (reads/writes fdl.toml)."""
     from fdl.config import (
         get_all,
         load_toml,
-        workspace_config_path,
+        project_config_path,
         set_value,
-        user_config_path,
     )
 
-    target = workspace_config_path() if local else user_config_path()
+    dest = project_config_path()
 
-    if _list:
-        for k, v in get_all(target).items():
+    if key is None:
+        for k, v in get_all(dest).items():
             console.print(f"{k}={v}", highlight=False)
         return
 
-    if key is None:
-        raise typer.BadParameter("Specify a key or use --list")
-
     if value is not None:
-        set_value(key, value, target)
+        set_value(key, value, dest)
     else:
-        data = load_toml(target)
-        section, name = key.split(".", 1)
-        result = data.get(section, {}).get(name)
+        data = load_toml(dest)
+        parts = key.split(".")
+        result = data
+        for part in parts:
+            if isinstance(result, dict):
+                result = result.get(part)
+            else:
+                result = None
+                break
         if result is None:
             raise SystemExit(1)
         console.print(result, highlight=False)
 
 
 @app.command()
+def sql(
+    target: str = typer.Argument(..., help="Target name (e.g. default)"),
+    query: str = typer.Argument(..., help="SQL query to execute"),
+) -> None:
+    """Execute a SQL query against the DuckLake catalog."""
+    from fdl.config import datasource_name
+    from fdl.ducklake import connect
+
+    resolved = _resolve_target(target)
+    storage_val = f"{resolved}/{datasource_name()}"
+
+    with connect(storage=storage_val, target_name=target) as conn:
+        name = datasource_name()
+        conn.execute(f"USE {name}")
+        conn.execute(query)
+        if not conn.description:
+            return
+        columns = [desc[0] for desc in conn.description]
+        rows = conn.fetchall()
+        if not rows:
+            return
+        # Format as table
+        col_widths = [len(c) for c in columns]
+        for row in rows:
+            for i, val in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(str(val)))
+        header = " | ".join(c.ljust(w) for c, w in zip(columns, col_widths))
+        separator = "-+-".join("-" * w for w in col_widths)
+        print(header)
+        print(separator)
+        for row in rows:
+            print(" | ".join(str(v).ljust(w) for v, w in zip(row, col_widths)))
+
+
+@app.command()
 def serve(
-    remote: str = typer.Argument(None, help="Remote name (omit for current project's .fdl/)"),
+    target: str = typer.Argument(..., help="Target name (e.g. default)"),
     port: int = typer.Option(4001, help="Port number"),
 ) -> None:
-    """Serve over HTTP (CORS + Range support).
-
-    \b
-    Without remote: serves .fdl/ of current project (single dataset).
-    With remote: serves the remote directory (multi-dataset).
-    """
+    """Serve a target directory over HTTP (CORS + Range support)."""
     from fdl.serve import run_server
 
-    if remote:
-        serve_dir = Path(_resolve_remote(remote))
-    else:
-        serve_dir = Path.cwd() / FDL_DIR
+    serve_dir = Path(_resolve_target(target))
     run_server(serve_dir, port)
 
 
