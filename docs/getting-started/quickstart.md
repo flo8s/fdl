@@ -1,147 +1,130 @@
 # Quick Start
 
-This guide walks you through initializing a data catalog and deploying it to remote storage.
-
-## Prerequisites
-
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- dbt (for pipeline execution)
-- S3-compatible storage (for remote push/pull)
+Create your first Frozen DuckLake in under 5 minutes — no S3, no dbt, no external services required.
 
 ## 1. Install
 
-### Global install (recommended)
+```bash
+pip install frozen-ducklake
+```
 
-=== "uv"
+For other methods (uv, pipx), see [Installation](installation.md).
 
-    ```bash
-    uv tool install frozen-ducklake
-    ```
-
-=== "pipx"
-
-    ```bash
-    pipx install frozen-ducklake
-    ```
-
-### Project dependency
-
-=== "uv"
-
-    ```bash
-    uv add frozen-ducklake
-    ```
-
-=== "pip"
-
-    ```bash
-    pip install frozen-ducklake
-    ```
-
-## 2. Initialize Project
+## 2. Create a project
 
 ```bash
-fdl init my-dataset
+mkdir my_dataset && cd my_dataset
+fdl init my_dataset
 ```
 
-This generates:
+You'll be prompted for target configuration. Press Enter to accept all defaults:
 
-- `fdl.toml` — Project config (tracked in Git)
-- `.fdl/` — DuckLake catalog and artifacts (auto-added to `.gitignore`)
+```
+Target name [default]:
+Public URL [http://localhost:4001]:
+Target URL [~/.local/share/fdl]:
+```
 
-For [dlt integration](../integrations/dlt.md), use a SQLite catalog:
+- Target name defaults to `default` — the default deploy destination
+- Public URL defaults to `http://localhost:4001` — matches the port `fdl serve` uses, so your catalog works immediately for local HTTP access
+- Target URL defaults to `~/.local/share/fdl` — a central location where pushed datasets accumulate across projects
+
+For S3-compatible storage deployment, set `--public-url` to your public endpoint at init time. Public URL is baked into the catalog and cannot be changed later — see [Known Issues](../resources/known-issues.md#data_path-is-fixed-at-init-time) for details.
+
+This creates `fdl.toml` (project config with target settings) and a `.fdl/` directory containing the DuckLake catalog.
+
+## 3. Add data
 
 ```bash
-fdl init my-dataset --sqlite
+fdl sql default "CREATE TABLE world_cities (name VARCHAR, country VARCHAR, population INTEGER)"
+fdl sql default "INSERT INTO world_cities VALUES
+    ('Tokyo', 'Japan', 14000000),
+    ('Delhi', 'India', 11000000),
+    ('Shanghai', 'China', 24900000),
+    ('São Paulo', 'Brazil', 12300000),
+    ('Mexico City', 'Mexico', 9200000),
+    ('Cairo', 'Egypt', 10200000),
+    ('Mumbai', 'India', 12500000),
+    ('Beijing', 'China', 21500000),
+    ('Dhaka', 'Bangladesh', 8900000),
+    ('Osaka', 'Japan', 2800000)"
 ```
 
-## 3. Configure Remotes
+`fdl sql` writes data directly to the target (`~/.local/share/fdl/my_dataset/` by default). The table definition is stored in the catalog (`.fdl/ducklake.duckdb`) and the row data is written as Parquet files to the target storage.
 
-Register remote storage as a Named Remote.
-
-### S3 Storage
-
-Set S3 endpoint and credentials:
+Verify the data:
 
 ```bash
-fdl config s3.endpoint https://your-s3-endpoint.com
-fdl config s3.access_key_id YOUR_ACCESS_KEY
-fdl config s3.secret_access_key YOUR_SECRET_KEY
+fdl sql default "SELECT * FROM world_cities ORDER BY population DESC LIMIT 5"
 ```
 
-Register the remote:
+```
+name     | country | population
+---------+---------+-----------
+Shanghai | China   | 24900000
+Beijing  | China   | 21500000
+Tokyo    | Japan   | 14000000
+Mumbai   | India   | 12500000
+São Paulo | Brazil  | 12300000
+```
+
+## 4. Push catalog and serve
+
+Push the catalog to the target, then serve:
 
 ```bash
-fdl config --local remotes.origin s3://my-bucket
+fdl push default
+fdl serve default
 ```
 
-!!! tip
-    S3 credentials are stored in `~/.fdl/config` (user level).
-    Remote URLs can be stored with `--local` in `.fdl/config` (workspace level),
-    or written directly in `fdl.toml` to share with the team.
+`fdl push` copies the catalog to the target directory. `fdl serve` starts an HTTP server (port 4001) serving the target with CORS and Range request support.
 
-### Local Storage
+In another terminal:
 
 ```bash
-fdl config --local remotes.local /path/to/storage
+duckdb -c "
+  ATTACH 'ducklake:http://localhost:4001/my_dataset/ducklake.duckdb' AS my_dataset;
+  SELECT * FROM my_dataset.main.world_cities ORDER BY population DESC;
+"
 ```
 
-## 4. Build Pipeline
+DuckDB fetches the catalog metadata over HTTP, then reads Parquet data files on demand.
 
-Run your dbt pipeline. `fdl run` automatically injects the required environment variables
-(`FDL_STORAGE`, `FDL_DATA_PATH`, etc.):
+## Optional: Deploy to S3-compatible storage
+
+Initialize with your S3 public URL:
 
 ```bash
-fdl run -- dbt run
+fdl init my_dataset --public-url https://your-public-url.com --target-url 's3://${FDL_S3_BUCKET}'
 ```
 
-## 5. Generate Metadata
+Then add S3 credentials to `fdl.toml` using `${VAR}` references:
 
-Generate metadata from dbt artifacts:
+```toml
+[targets.default]
+url = "s3://${FDL_S3_BUCKET}"
+public_url = "https://your-public-url.com"
+s3_endpoint = "https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com"
+s3_access_key_id = "${S3_ACCESS_KEY_ID}"
+s3_secret_access_key = "${S3_SECRET_ACCESS_KEY}"
+```
+
+Set environment variables (e.g. via `.envrc`), then add data and push:
 
 ```bash
-fdl metadata
+fdl sql default "CREATE TABLE world_cities (name VARCHAR, country VARCHAR, population INTEGER)"
+fdl sql default "INSERT INTO world_cities VALUES ('Tokyo', 'Japan', 14000000)"
+fdl push default
 ```
 
-This creates `.fdl/metadata.json` containing table/column definitions and lineage information.
-
-## 6. Push to Remote
-
-Upload the catalog and metadata to the remote:
+Once deployed, anyone can query directly from the public URL:
 
 ```bash
-fdl push origin
+duckdb -c "ATTACH 'ducklake:https://your-public-url.com/my_dataset/ducklake.duckdb' AS my_dataset"
 ```
 
-SQLite catalogs are automatically converted to DuckDB format during push.
+## Next steps
 
-## 7. Pull from Remote
-
-To retrieve a catalog in a different environment:
-
-```bash
-fdl init my-dataset
-fdl pull origin
-```
-
-## Typical Workflow
-
-```mermaid
-graph LR
-    A[fdl init] --> B[fdl config]
-    B --> C[fdl run -- dbt run]
-    C --> D[fdl metadata]
-    D --> E[fdl push origin]
-```
-
-1. `fdl init` — Initialize the project
-2. `fdl config` — Configure remotes and credentials
-3. `fdl run -- dbt run` — Execute the pipeline
-4. `fdl metadata` — Generate metadata
-5. `fdl push origin` — Deploy to remote
-
-## Next Steps
-
-- [Configuration](../concepts/configuration.md) — Details on 3-layer config management
-- [CLI Reference](../cli/index.md) — Full command reference
+- [Working with Data](../guide/working-with-data.md) — How to read and write data in your catalog
+- [Configuration](../guide/configuration.md) — Targets, credentials, config layers
+- [CLI Reference](../reference/cli.md) — All available commands

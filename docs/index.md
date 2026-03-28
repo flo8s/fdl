@@ -1,71 +1,28 @@
+---
+title: Home
+---
+
 # fdl — Frozen DuckLake CLI
 
 fdl automates the lifecycle of [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) catalogs — from initialization to deployment.
 
-## Features
-
-- Initialize and manage DuckLake catalogs (`fdl init`)
-- Push and pull to S3 or local storage via Named Remotes
-- 3-layer configuration management (project → workspace → user)
-- Automatic metadata generation from dbt artifacts
-- Environment variable injection for pipeline execution (`fdl run`)
-- HTTP server with CORS and Range request support (`fdl serve`)
-
 ## Installation
 
-### Global install (recommended)
-
-=== "uv"
-
-    ```bash
-    uv tool install frozen-ducklake
-    ```
-
-=== "pipx"
-
-    ```bash
-    pipx install frozen-ducklake
-    ```
-
-### Project dependency
-
-=== "uv"
-
-    ```bash
-    uv add frozen-ducklake
-    ```
-
-=== "pip"
-
-    ```bash
-    pip install frozen-ducklake
-    ```
-
-Requires Python 3.13 or later.
-
-## Quick Start
-
 ```bash
-# Initialize a project
-fdl init my-dataset
-
-# Configure a remote
-fdl config remotes.origin s3://my-bucket
-
-# Run the pipeline
-fdl run -- dbt run
-
-# Generate metadata
-fdl metadata
-
-# Upload to remote
-fdl push origin
+pip install frozen-ducklake
 ```
 
-See [Quick Start](getting-started/quickstart.md) for a complete walkthrough.
+See [Installation](getting-started/installation.md) for other methods (uv, pipx).
+
+## Features
+
+- Publish data to S3-compatible storage or local directories with a single command
+- Run data pipelines with automatic storage and credential resolution
+- Serve datasets over HTTP for instant DuckDB access
+- Works with dbt and dlt out of the box
 
 ## Learn More
 
-- [Quick Start](getting-started/quickstart.md) — End-to-end setup and deployment guide
-- [Configuration](concepts/configuration.md) — 3-layer config management and environment variables
-- [CLI Reference](cli/index.md) — All available commands
+- [Quick Start](getting-started/quickstart.md) — Create and serve your first dataset in under 5 minutes
+- [Working with Data](guide/working-with-data.md) — How to read and write data in your catalog
+- [CLI Reference](reference/cli.md) — All available commands

@@ -27,17 +27,20 @@ fdl manages the entire Frozen DuckLake lifecycle through a single CLI:
 
 ```
 fdl init      # Initialize a project
-fdl pull      # Fetch catalog from remote
-fdl push      # Publish to remote
+fdl pull      # Fetch catalog from target
 fdl run       # Execute pipelines with injected config
-fdl metadata  # Generate metadata from dbt artifacts
+fdl push      # Publish to target
 ```
 
 - Eliminates repetitive manual steps for catalog management
-- Centralizes configuration through a 3-layer system (project → workspace → user)
-- Integrates seamlessly with data tools like dbt
+- Works with any pipeline tool via environment variable injection (`fdl run`)
 - Makes publishing open data as simple as `fdl push`
 
-The goal is to lower the barrier to data infrastructure so that anyone can manage, publish, and share data — advancing the open data ecosystem.
+The goal is to make data publishing accessible to everyone — not just enterprises with dedicated infrastructure.
 
-See the [Roadmap](../roadmap.md) for where fdl is headed next.
+## Learn more about DuckLake
+
+- [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) — The read-only data lake pattern that fdl automates
+- [DuckLake](https://ducklake.select/) — Open catalog format for DuckDB
+- [DuckLake documentation](https://ducklake.select/docs/stable/) — Official docs
+- [DuckDB](https://duckdb.org/) — The analytical database that powers DuckLake
