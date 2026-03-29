@@ -89,7 +89,8 @@ def init(
                 f"'{name}' is not a valid SQL identifier. Use '{sanitized}' instead."
             )
     else:
-        name = _sanitize_name(dataset_dir.resolve().name)
+        default_name = _sanitize_name(dataset_dir.resolve().name)
+        name = typer.prompt("Datasource name", default=default_name)
     dist_dir = dataset_dir / FDL_DIR
     config_path = dataset_dir / PROJECT_CONFIG
 
@@ -236,36 +237,21 @@ def _parse_run_args(args: list[str]) -> tuple[str, list[str]]:
 
 
 @app.command()
-def prune(
+def checkpoint(
     target: str = typer.Argument(..., help="Target name (e.g. default)"),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="List orphaned files without deleting"
-    ),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
-    older_than_days: int = typer.Option(
-        None, "--older-than", help="Only target files older than N days"
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip stale catalog check"
     ),
 ) -> None:
-    """Clean up orphaned data files on target storage."""
-    from fdl.config import target_s3_config
-    from fdl.prune import prune_datasource
+    """Run DuckLake maintenance (expire snapshots, compact files, clean up orphans)."""
+    from fdl.checkpoint import run_checkpoint
+    from fdl.meta import PushConflictError
 
-    dataset_dir = Path.cwd()
-    dist_dir = dataset_dir / FDL_DIR
-
-    resolved = _resolve_target(target)
-    if not resolved.startswith("s3://"):
-        raise typer.BadParameter("prune only supports S3 targets")
-
-    s3 = target_s3_config(target)
-    prune_datasource(
-        dataset_dir,
-        dist_dir,
-        s3=s3,
-        force=force,
-        dry_run=dry_run,
-        older_than_days=older_than_days,
-    )
+    try:
+        run_checkpoint(target, force=force)
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1)
 
 
 @app.command("config")

@@ -55,6 +55,28 @@ def test_existing_env_vars_are_not_overwritten(fdl_project_dir: Path, monkeypatc
     assert env_file.read_text().strip() == "custom_value"
 
 
+def test_fdl_catalog_points_to_local_catalog(fdl_project_dir: Path):
+    """fdl run injects FDL_CATALOG pointing to the local catalog file."""
+    storage = fdl_project_dir / "storage"
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(storage),
+        "--target-name", "default",
+    ])
+
+    env_file = fdl_project_dir / "env_out.txt"
+    result = cli.invoke(app, [
+        "run", "default", "--",
+        "sh", "-c", f"echo $FDL_CATALOG > {env_file}",
+    ])
+    assert result.exit_code == 0, result.output
+    catalog = env_file.read_text().strip()
+    assert catalog.endswith("ducklake.duckdb")
+    assert Path(catalog).exists()
+
+
 def test_missing_separator_fails(fdl_project_dir: Path):
     """fdl run without -- separator fails."""
     cli = CliRunner()

@@ -11,7 +11,7 @@ fdl provides 8 commands for managing Frozen DuckLake catalogs.
 | [`push`](#push) | Upload catalog to target |
 | [`run`](#run) | Run a command with injected env vars |
 | [`sql`](#sql) | Execute SQL against the catalog |
-| [`prune`](#prune) | Clean up orphaned data files |
+い| [`checkpoint`](#checkpoint) | Run DuckLake maintenance |
 | [`config`](#config) | Get or set configuration |
 | [`serve`](#serve) | Start an HTTP server |
 
@@ -124,39 +124,50 @@ fdl sql default "SELECT * FROM cities ORDER BY population DESC"
 
 See [Working with Data](../guide/working-with-data.md) for details on how the catalog connection works and caveats.
 
-## prune
+## checkpoint
 
-Clean up orphaned data files on target storage. DuckLake tracks data files by snapshot; files no longer referenced by any active snapshot are considered orphaned.
+Run DuckLake maintenance on the catalog. Executes the DuckLake [`CHECKPOINT`](https://ducklake.select/docs/stable/duckdb/maintenance/checkpoint) statement, which performs:
+
+- Expire old snapshots
+- Merge adjacent small files
+- Rewrite data files with many deletions
+- Clean up files scheduled for deletion
+- Delete orphaned files not tracked by the catalog
 
 ```
-fdl prune TARGET [--dry-run] [--force] [--older-than DAYS]
+fdl checkpoint TARGET [--force]
 ```
 
 | Argument / Option | Description |
 |---|---|
-| `TARGET` | Target name (e.g. `default`). S3-compatible targets only. |
-| `--dry-run`, `-n` | List orphaned files and sizes without deleting |
-| `--force`, `-f` | Skip confirmation prompt |
-| `--older-than DAYS` | Only target files older than N days |
+| `TARGET` | Target name (e.g. `default`) |
+| `--force`, `-f` | Skip stale catalog check |
 
-The command performs two cleanup steps:
+### Stale catalog check
 
-1. Runs DuckLake's `ducklake_cleanup_old_files()` for files scheduled for deletion by snapshot expiration
-2. Scans target storage for files not in the active set (`end_snapshot IS NULL`) and deletes them
+Before running maintenance, fdl verifies that the local catalog is up to date with the remote. If someone else has pushed since your last pull, checkpoint is rejected:
 
-Deletion is irreversible. Always use `--dry-run` first to review the file list.
+```
+Local catalog is stale (remote pushed at 2026-04-01T00:00:00+00:00).
+Run 'fdl pull' first, or use --force to override.
+```
+
+This prevents accidental deletion of active files that were added by another user's push but are not yet in your local catalog.
 
 Examples:
 
 ```bash
-# Preview orphaned files and total size
-fdl prune default --dry-run
+fdl checkpoint default
 
-# Delete with confirmation prompt
-fdl prune default
+# Skip stale catalog check
+fdl checkpoint default --force
+```
 
-# Delete files older than 7 days, no prompt
-fdl prune default --older-than 7 --force
+For individual maintenance functions, use `fdl sql`:
+
+```bash
+fdl sql default "CALL ducklake_cleanup_old_files('my_dataset', cleanup_all => true)"
+fdl sql default "CALL ducklake_delete_orphaned_files('my_dataset', dry_run => true)"
 ```
 
 ## config

@@ -37,21 +37,44 @@ def read_pushed_at_s3(client, bucket: str, datasource: str) -> str | None:
         raise
 
 
+def read_remote_pushed_at(resolved: str, target_name: str, datasource: str) -> str | None:
+    """Read pushed_at from remote meta.json (S3 or local)."""
+    if resolved.startswith("s3://"):
+        from fdl.config import target_s3_config
+        from fdl.s3 import create_s3_client
+
+        s3 = target_s3_config(target_name)
+        return read_pushed_at_s3(create_s3_client(s3), s3.bucket, datasource)
+    else:
+        return read_pushed_at(Path(resolved) / datasource / FDL_DIR / META_JSON)
+
+
+def is_stale(local_pushed_at: str | None, remote_pushed_at: str | None) -> bool:
+    """Check if local catalog is behind remote.
+
+    Pure function: returns True if remote is newer than local.
+    Returns False if either side has no timestamp (first push, or
+    pre-conflict-detection state).
+    """
+    if local_pushed_at is None or remote_pushed_at is None:
+        return False
+    return remote_pushed_at > local_pushed_at
+
+
 def check_conflict(remote_pushed_at: str | None, *, force: bool) -> None:
     """Compare remote pushed_at with local record. Raise on conflict."""
     local_pushed_at = read_pushed_at(FDL_DIR / META_JSON)
 
-    if remote_pushed_at is None or local_pushed_at is None:
+    if not is_stale(local_pushed_at, remote_pushed_at):
         return
 
-    if remote_pushed_at != local_pushed_at:
-        if force:
-            console.print("[yellow]Force push: overriding conflict detection[/yellow]")
-            return
-        raise PushConflictError(
-            f"Remote was pushed at {remote_pushed_at}. "
-            f"Run 'fdl pull' first, or use --force to override."
-        )
+    if force:
+        console.print("[yellow]Force: overriding conflict detection[/yellow]")
+        return
+    raise PushConflictError(
+        f"Remote was pushed at {remote_pushed_at}. "
+        f"Run 'fdl pull' first, or use --force to override."
+    )
 
 
 def write_meta(path: Path, pushed_at: str) -> None:

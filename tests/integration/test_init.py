@@ -29,6 +29,27 @@ def test_default_catalog_is_duckdb(fdl_project_dir: Path):
     assert len(tables) > 0
 
 
+def test_name_prompt_defaults_to_directory_name(fdl_project_dir: Path):
+    """When NAME is omitted, the prompt suggests the current directory name.
+
+    Pressing Enter accepts the default, which is written to fdl.toml as the name.
+    """
+    import tomllib
+
+    dir_name = fdl_project_dir.resolve().name
+
+    # Accept all defaults (name, target_name, public_url, target_url)
+    result = CliRunner().invoke(app, ["init"], input="\n\n\n\n")
+    assert result.exit_code == 0, result.output
+
+    # The directory name appears in the prompt as the default value
+    assert dir_name in result.output
+
+    # The default value is written to fdl.toml
+    toml_data = tomllib.loads((fdl_project_dir / "fdl.toml").read_text())
+    assert toml_data["name"] == dir_name
+
+
 def test_invalid_name_is_rejected_with_suggestion(fdl_project_dir: Path):
     """fdl init rejects invalid SQL identifier and suggests sanitized name."""
     result = CliRunner().invoke(app, [
