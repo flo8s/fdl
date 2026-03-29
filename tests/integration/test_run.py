@@ -77,6 +77,31 @@ def test_fdl_catalog_points_to_local_catalog(fdl_project_dir: Path):
     assert Path(catalog).exists()
 
 
+def test_fdl_data_path_ends_with_files(fdl_project_dir: Path):
+    """fdl run injects FDL_DATA_PATH derived from target storage.
+
+    Spec: FDL_DATA_PATH = {FDL_STORAGE}/ducklake.duckdb.files/
+    """
+    storage = fdl_project_dir / "storage"
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(storage),
+        "--target-name", "default",
+    ])
+
+    env_file = fdl_project_dir / "env_out.txt"
+    result = cli.invoke(app, [
+        "run", "default", "--",
+        "sh", "-c", f"echo $FDL_DATA_PATH > {env_file}",
+    ])
+    assert result.exit_code == 0, result.output
+    data_path = env_file.read_text().strip()
+    assert data_path.endswith("ducklake.duckdb.files/")
+    assert str(storage) in data_path
+
+
 def test_missing_separator_fails(fdl_project_dir: Path):
     """fdl run without -- separator fails."""
     cli = CliRunner()
