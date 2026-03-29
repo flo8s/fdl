@@ -155,10 +155,12 @@ def pull(
 @app.command()
 def push(
     dest: str = typer.Argument(..., help="Target name (e.g. default)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Override conflict detection"),
 ) -> None:
     """Push catalog to a target."""
     from fdl.config import datasource_name
     from fdl.ducklake import convert_sqlite_to_duckdb
+    from fdl.meta import PushConflictError
 
     dataset_dir = Path.cwd()
     dist_dir = dataset_dir / FDL_DIR
@@ -168,18 +170,22 @@ def push(
     console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
     convert_sqlite_to_duckdb(dataset_dir)
 
-    if resolved.startswith("s3://"):
-        from fdl.config import target_s3_config
-        from fdl.push import push_to_s3
-        from fdl.s3 import create_s3_client
+    try:
+        if resolved.startswith("s3://"):
+            from fdl.config import target_s3_config
+            from fdl.push import push_to_s3
+            from fdl.s3 import create_s3_client
 
-        s3 = target_s3_config(dest)
-        client = create_s3_client(s3)
-        push_to_s3(client, s3.bucket, dist_dir, datasource, dataset_dir)
-    else:
-        from fdl.push import push_to_local
+            s3 = target_s3_config(dest)
+            client = create_s3_client(s3)
+            push_to_s3(client, s3.bucket, dist_dir, datasource, dataset_dir, force=force)
+        else:
+            from fdl.push import push_to_local
 
-        push_to_local(Path(resolved), dist_dir, datasource, dataset_dir)
+            push_to_local(Path(resolved), dist_dir, datasource, dataset_dir, force=force)
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1)
 
 
 @app.command(

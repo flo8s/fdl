@@ -59,16 +59,27 @@ Requires prior initialization with `fdl init`.
 Push catalog to target.
 
 ```
-fdl push TARGET
+fdl push TARGET [--force]
 ```
 
-| Argument | Description |
+| Argument / Option | Description |
 |---|---|
 | `TARGET` | Target name (e.g. `default`) |
+| `--force`, `-f` | Override conflict detection |
 
 Pushes the DuckLake catalog (`ducklake.duckdb`) and `fdl.toml` to the target. Data files are not included — they are written directly to the target via `fdl run` or `fdl sql`.
 
 SQLite catalogs are automatically converted to DuckDB during push.
+
+### Conflict detection
+
+Before pushing, fdl checks the remote's `.fdl/meta.json` against the local copy. If someone else has pushed since your last pull, push is rejected:
+
+```
+Remote was pushed at 2026-04-01T00:00:00+00:00. Run 'fdl pull' first, or use --force to override.
+```
+
+Use `--force` to skip this check. The first push to a target with no `.fdl/meta.json` always succeeds.
 
 ## run
 

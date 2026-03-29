@@ -1,9 +1,10 @@
 """Pull: download DuckLake catalog from S3 or local directory."""
 
+import json
 import shutil
 from pathlib import Path
 
-from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE
+from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, META_JSON
 from fdl.console import console
 
 
@@ -23,6 +24,16 @@ def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
         if src_file.exists():
             console.print(f"  [dim]{datasource}/{name}[/dim]")
             shutil.copy2(src_file, dist_dir / name)
+
+    # Sync .fdl/meta.json from remote
+    from fdl.meta import sync_meta
+
+    meta_file = src / FDL_DIR / META_JSON
+    if meta_file.exists():
+        data = json.loads(meta_file.read_text())
+        sync_meta(data.get("pushed_at"))
+    else:
+        sync_meta(None)
 
     return True
 
@@ -55,5 +66,10 @@ def fetch_from_s3(client, bucket: str, dist_dir: Path, datasource: str) -> bool:
     _download_file(
         client, bucket, f"{datasource}/{DUCKLAKE_SQLITE}", dist_dir / DUCKLAKE_SQLITE
     )
+
+    # Sync pushed_at from remote meta
+    from fdl.meta import read_pushed_at_s3, sync_meta
+
+    sync_meta(read_pushed_at_s3(client, bucket, datasource))
 
     return found

@@ -5,6 +5,8 @@
 [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) is a read-only data lake pattern built on [DuckLake](https://ducklake.select/).
 Place a catalog database and Parquet files on object storage — that's all it takes to create a fully functional data lakehouse.
 
+The name "fdl" comes from this blog post. fdl manages DuckLake catalogs and their data files, and publishes them to object storage so anyone can query with DuckDB.
+
 - No database server required — just object storage
 - Cost is storage only (reads are free on Cloudflare R2)
 - No complex catalog service like Iceberg or Delta Lake
@@ -40,7 +42,8 @@ The goal is to make data publishing accessible to everyone — not just enterpri
 
 ## Learn more about DuckLake
 
-- [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) — The read-only data lake pattern that fdl automates
+- [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) — The read-only data lake pattern that inspired the name
+- [Public DuckLake on Object Storage](https://ducklake.select/docs/stable/duckdb/guides/public_ducklake_on_object_storage) — The deployment pattern fdl uses
 - [DuckLake](https://ducklake.select/) — Open catalog format for DuckDB
 - [DuckLake documentation](https://ducklake.select/docs/stable/) — Official docs
 - [DuckDB](https://duckdb.org/) — The analytical database that powers DuckLake

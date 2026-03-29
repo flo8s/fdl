@@ -4,6 +4,7 @@ from pathlib import Path
 FDL_DIR = Path(".fdl")
 DUCKLAKE_FILE = "ducklake.duckdb"
 DUCKLAKE_SQLITE = "ducklake.sqlite"
+META_JSON = "meta.json"
 
 
 def ducklake_data_path(catalog_url: str) -> str:
