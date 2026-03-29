@@ -270,7 +270,7 @@ def config_cmd(
     """Get or set fdl configuration (reads/writes fdl.toml)."""
     from fdl.config import (
         get_all,
-        load_toml,
+        _load_toml,
         project_config_path,
         set_value,
     )
@@ -285,7 +285,7 @@ def config_cmd(
     if value is not None:
         set_value(key, value, dest)
     else:
-        data = load_toml(dest)
+        data = _load_toml(dest)
         parts = key.split(".")
         result = data
         for part in parts:

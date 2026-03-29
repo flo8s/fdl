@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fdl.s3 import S3Config
 
 PROJECT_CONFIG = "fdl.toml"
 
@@ -14,10 +18,8 @@ def project_config_path() -> Path:
     return Path.cwd() / PROJECT_CONFIG
 
 
-def load_toml(path: Path) -> dict:
-    """Load a TOML file, returning empty dict if not found."""
-    if not path.exists():
-        return {}
+def _load_toml(path: Path) -> dict:
+    """Load a TOML file."""
     with open(path, "rb") as f:
         return tomllib.load(f)
 
@@ -25,7 +27,10 @@ def load_toml(path: Path) -> dict:
 def set_value(key: str, value: str, path: Path | None = None) -> None:
     """Set a config value. Supports dotted keys up to 3 levels (e.g. targets.default.url)."""
     dest = path or project_config_path()
-    data = load_toml(dest)
+    try:
+        data = _load_toml(dest)
+    except FileNotFoundError:
+        data = {}
 
     parts = key.split(".")
     if len(parts) == 1:
@@ -54,7 +59,7 @@ def set_value(key: str, value: str, path: Path | None = None) -> None:
 
 def get_all(path: Path | None = None) -> dict[str, str]:
     """Get all config values as flat dotted keys."""
-    data = load_toml(path or project_config_path())
+    data = _load_toml(path or project_config_path())
     return _flatten(data)
 
 
@@ -71,13 +76,15 @@ def _flatten(data: dict, prefix: str = "") -> dict[str, str]:
 
 
 def datasource_name(project_dir: Path | None = None) -> str:
-    """Datasource name from fdl.toml, fallback to directory name."""
+    """Datasource name from fdl.toml."""
     project_dir = project_dir or Path.cwd()
-    data = load_toml(project_dir / PROJECT_CONFIG)
+    data = _load_toml(project_dir / PROJECT_CONFIG)
     name = data.get("name")
-    if name:
-        return name
-    return project_dir.resolve().name
+    if not name:
+        raise FileNotFoundError(
+            f"'name' not found in {PROJECT_CONFIG}. Run 'fdl init' first."
+        )
+    return name
 
 
 def storage() -> str:
@@ -108,7 +115,7 @@ def catalog_path() -> str:
     return str(FDL_DIR / DUCKLAKE_FILE)
 
 
-def target_s3_config(name: str, project_dir: Path | None = None) -> S3Config:
+def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":
     """Get S3 config for a target from fdl.toml (with ${VAR} expansion)."""
     project_dir = project_dir or Path.cwd()
 
@@ -118,7 +125,7 @@ def target_s3_config(name: str, project_dir: Path | None = None) -> S3Config:
         raise ValueError(f"Target '{name}' is not an S3 target: {url}")
     bucket = url.removeprefix("s3://")
 
-    data = load_toml(project_dir / PROJECT_CONFIG)
+    data = _load_toml(project_dir / PROJECT_CONFIG)
     target = data.get("targets", {}).get(name, {})
 
     from fdl.s3 import S3Config
@@ -167,7 +174,7 @@ def resolve_target(name: str, project_dir: Path) -> str:
             f'  fdl config targets.{name.split("/")[0]}.url "{name}"'
         )
 
-    data = load_toml(project_dir / PROJECT_CONFIG)
+    data = _load_toml(project_dir / PROJECT_CONFIG)
     target = data.get("targets", {}).get(name)
     if isinstance(target, dict):
         url = target.get("url")
@@ -177,16 +184,13 @@ def resolve_target(name: str, project_dir: Path) -> str:
                 return expanded
             return str(Path(expanded).expanduser())
 
-    raise ValueError(
-        f"target '{name}' not found.\n"
-        f"  Define it in {PROJECT_CONFIG}"
-    )
+    raise ValueError(f"target '{name}' not found.\n  Define it in {PROJECT_CONFIG}")
 
 
 def target_public_url(name: str, project_dir: Path | None = None) -> str | None:
     """Get the public_url for a target from fdl.toml."""
     project_dir = project_dir or Path.cwd()
-    data = load_toml(project_dir / PROJECT_CONFIG)
+    data = _load_toml(project_dir / PROJECT_CONFIG)
     target = data.get("targets", {}).get(name)
     if isinstance(target, dict):
         pub = target.get("public_url")
