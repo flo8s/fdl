@@ -6,4 +6,4 @@ fdl manages the lifecycle of [Frozen DuckLake](https://ducklake.select/2025/10/2
 pip install frozen-ducklake
 ```
 
-> **[Documentation →](https://fdl.flo8s.com/)**
+**[Documentation →](https://fdl.flo8s.com/)**
