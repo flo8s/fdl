@@ -1,4 +1,139 @@
-# Changelog
+# CHANGELOG
+
+
+## v0.5.0 (2026-03-29)
+
+### Build System
+
+- Simplify dependencies and add project metadata
+  ([`946e2ba`](https://github.com/flo8s/fdl/commit/946e2baf2bcf89aaaec35bc4c005bfb84d46636a))
+
+Remove dbt-core, pydantic, jinja2, pyyaml dependencies. Add MIT license, project URLs, and authors
+  to pyproject.toml. Move zensical from docs dependency group to dev.
+
+### Chores
+
+- Remove fdl_common dbt macros package
+  ([`605a3d4`](https://github.com/flo8s/fdl/commit/605a3d403ce90ebd94c36318faa39ac16b99301e))
+
+### Continuous Integration
+
+- Update docs workflow to use zensical
+  ([`330ab5c`](https://github.com/flo8s/fdl/commit/330ab5cc90fbfe752a7cb26d2e1bcc0d28b27594))
+
+- Update docs workflow to use zensical
+  ([`420b05b`](https://github.com/flo8s/fdl/commit/420b05b0310ebeef0bf0618a3516f16f34345f11))
+
+### Documentation
+
+- Add concept pages and global install instructions
+  ([`35180ad`](https://github.com/flo8s/fdl/commit/35180ad2ecb0c4e3404267cd7ad148b570d2dd46))
+
+- Add "Why fdl" page explaining the Frozen DuckLake pattern and motivation - Add Roadmap page with
+  vision toward a package manager for Frozen DuckLake - Add global install instructions (uv tool /
+  pipx) to quickstart
+
+- Migrate from mkdocs to zensical
+  ([`5b8359c`](https://github.com/flo8s/fdl/commit/5b8359c4e599bceeecd7b5f3fb24403746e3ccda))
+
+Replace mkdocs-material with zensical as the documentation engine. Replace changelog symlink with
+  pymdownx.snippets include.
+
+- Rewrite documentation for target-based architecture
+  ([`e48b8e3`](https://github.com/flo8s/fdl/commit/e48b8e3df00d07b30042f0a3f430e762fb460690))
+
+Restructure docs to match new target-based config model. Migrate from mkdocs to zensical. Add guide,
+  reference, and resources sections with new content.
+
+- Update CLAUDE.md and add CONTRIBUTING.md
+  ([`28d12f1`](https://github.com/flo8s/fdl/commit/28d12f1afe85d94f2249ca36c9b6c54b2c8e95fa))
+
+- Update README, CLAUDE.md, and CONTRIBUTING.md
+  ([`0c48dff`](https://github.com/flo8s/fdl/commit/0c48dff5f858e2a334a8c6744020ccb232949c85))
+
+### Features
+
+- Add --version flag, improve gc output
+  ([`2046a11`](https://github.com/flo8s/fdl/commit/2046a11e5fdd8d6dc01949bc58ec01129bd200b0))
+
+- Add push conflict detection and --force flag
+  ([`3db0216`](https://github.com/flo8s/fdl/commit/3db0216650bc4b78479230c376de61cc37eab534))
+
+- Track pushed_at timestamp in .fdl/meta.json (local + remote) - Push rejects when remote was
+  updated since last pull - --force overrides conflict detection - Pull syncs meta.json from remote
+  for next push check
+
+- Rewrite to target-based architecture
+  ([`a17d8ec`](https://github.com/flo8s/fdl/commit/a17d8ecd6648681b0acf5426f232ae00252f5abe))
+
+Replace 3-layer config (env → workspace → user) with single fdl.toml and ${VAR} environment variable
+  expansion.
+
+BREAKING CHANGE: - `remote` renamed to `target` across all commands - `FDL_ATTACH_PATH` renamed to
+  `FDL_CATALOG` - `gc` command renamed to `prune` - `fdl run` now requires TARGET argument -
+  `metadata` command removed - `create_destination()` removed from ducklake module - User/workspace
+  config files (~/.fdl/config, .fdl/config) no longer read
+
+New features: - `fdl sql TARGET QUERY` — execute SQL against the catalog - `fdl init` prompts
+  interactively for target config - S3Config dataclass for typed credential handling
+
+### Refactoring
+
+- Make load_toml strict and remove datasource_name fallback
+  ([`63ca8ed`](https://github.com/flo8s/fdl/commit/63ca8ed895b6bfde79b460dcb6afa209cd1ab958))
+
+- load_toml → _load_toml: internal function, raises FileNotFoundError - set_value: catch
+  FileNotFoundError for new file creation - datasource_name: require name in fdl.toml, no directory
+  name fallback
+
+- Replace print with rich console output
+  ([`3958b6b`](https://github.com/flo8s/fdl/commit/3958b6b727226cfc4ca85fcc846136927549c387))
+
+- Replace prune with checkpoint command
+  ([`6433bcd`](https://github.com/flo8s/fdl/commit/6433bcdd3c59ace27cea5588e57956477d069c7a))
+
+- Use DuckLake CHECKPOINT statement via connect() context manager - Remove S3-only restriction,
+  works on any target - Extract is_stale pure function and read_remote_pushed_at to meta.py - Add
+  stale catalog check before maintenance (reuses push conflict detection)
+
+- Unify branding to Frozen DuckLake
+  ([`cd148ca`](https://github.com/flo8s/fdl/commit/cd148ca6ff0f745ef881cabe8173d64e694cee98))
+
+- Rename "Frozen Data Lake" to "Frozen DuckLake" across all files - Normalize casing: FDL → fdl -
+  Remove "Git-like" messaging - Update site_name to "fdl — Frozen DuckLake CLI"
+
+### Testing
+
+- Add FDL_DATA_PATH injection test
+  ([`2644ae9`](https://github.com/flo8s/fdl/commit/2644ae9378446c89f6bdbcfaa02187bd1cf479e1))
+
+Verify fdl run injects FDL_DATA_PATH ending with ducklake.duckdb.files/
+
+- Add integration and unit tests (89 tests)
+  ([`1d01ffe`](https://github.com/flo8s/fdl/commit/1d01ffeec8e2f0580bc6310c36b8a171b6e3bb23))
+
+Integration tests (tests/integration/): - test_init: default catalog, invalid name, existing toml,
+  double init, rollback, sqlite - test_config: get, set, list-all, env var reference, s3
+  credentials, missing key, without init - test_sql: data persistence, invalid sql - test_run: env
+  injection, no-overwrite, separator, exit code propagation - test_push: catalog copy, sqlite
+  conversion, meta.json, conflict detection, force push - test_pull: catalog restore, meta.json
+  sync, pull-then-push, empty target - test_prune: local target rejection, orphan deletion, dry-run
+  - test_serve: CORS, range request, HEAD, OPTIONS, 404
+
+Unit tests (tests/): - test_config: set_value, get_all, datasource_name, storage/data_path/
+  catalog_path, resolve_target, target_s3_config, ducklake_url, fdl_env_dict - test_init_module:
+  ducklake_data_path, default_target_url - test_s3: S3Config endpoint_host - test_serve:
+  CORSRangeHandler
+
+- Add Phase 1 pure function tests
+  ([`a118610`](https://github.com/flo8s/fdl/commit/a118610fb8348579555c945967c9020de3ab6ebe))
+
+- test_init_module.py: ducklake_data_path, default_target_url - test_s3.py: S3Config endpoint_host
+
+- Add S3 target integration tests for push and pull
+  ([`c6caf1d`](https://github.com/flo8s/fdl/commit/c6caf1ddea4a0fa15c0faaab8bc270e6024bf808))
+
+- push uploads catalog to S3 - push conflict detection on S3 - pull restores catalog from S3
 
 
 ## v0.4.0 (2026-03-27)
