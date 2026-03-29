@@ -11,7 +11,7 @@ fdl provides 8 commands for managing Frozen DuckLake catalogs.
 | [`push`](#push) | Upload catalog to target |
 | [`run`](#run) | Run a command with injected env vars |
 | [`sql`](#sql) | Execute SQL against the catalog |
-い| [`checkpoint`](#checkpoint) | Run DuckLake maintenance |
+| [`checkpoint`](#checkpoint) | Run DuckLake maintenance |
 | [`config`](#config) | Get or set configuration |
 | [`serve`](#serve) | Start an HTTP server |
 
