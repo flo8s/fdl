@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-03-30)
+
+### Bug Fixes
+
+- Correct formatting in CLI reference table
+  ([`e6de3e8`](https://github.com/flo8s/fdl/commit/e6de3e8501dac9b03fd60ac1c5c07fa791aa4334))
+
+### Chores
+
+- Sync uv.lock with pyproject.toml version
+  ([`1c4dbea`](https://github.com/flo8s/fdl/commit/1c4dbea558daeba73b95fe8b3e35a66b27b49d71))
+
+### Documentation
+
+- Update README formatting for documentation link
+  ([`1fb8e20`](https://github.com/flo8s/fdl/commit/1fb8e2060efb293b39d2ead5d06337ee080abb35))
+
+### Refactoring
+
+- Replace checkpoint command with stale catalog check in fdl sql
+  ([`677f23f`](https://github.com/flo8s/fdl/commit/677f23fe15b869a6e22befbff9140ab4f07797fd))
+
+
 ## v0.5.0 (2026-03-29)
 
 ### Build System
