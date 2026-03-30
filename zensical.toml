@@ -36,6 +36,10 @@ primary = "deep purple"
 accent = "deep purple"
 toggle = { icon = "material/brightness-4", name = "Switch to light mode" }
 
+[project.extra.analytics]
+provider = "google"
+property = "G-KXE38SFFWH"
+
 [project.plugins.mkdocstrings.handlers.python]
 paths = ["src"]
 
