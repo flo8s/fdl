@@ -236,24 +236,6 @@ def _parse_run_args(args: list[str]) -> tuple[str, list[str]]:
     return before[0], cmd
 
 
-@app.command()
-def checkpoint(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip stale catalog check"
-    ),
-) -> None:
-    """Run DuckLake maintenance (expire snapshots, compact files, clean up orphans)."""
-    from fdl.checkpoint import run_checkpoint
-    from fdl.meta import PushConflictError
-
-    try:
-        run_checkpoint(target, force=force)
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1)
-
-
 @app.command("config")
 def config_cmd(
     key: str = typer.Argument(None, help="Config key (e.g. 'targets.default.url')"),
@@ -295,17 +277,30 @@ def config_cmd(
 def sql(
     target: str = typer.Argument(..., help="Target name (e.g. default)"),
     query: str = typer.Argument(..., help="SQL query to execute"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip stale catalog check"
+    ),
 ) -> None:
     """Execute a SQL query against the DuckLake catalog."""
     from fdl.config import datasource_name
     from fdl.ducklake import connect
+    from fdl.meta import PushConflictError, check_conflict, read_remote_pushed_at
 
     resolved = _resolve_target(target)
-    storage_val = f"{resolved}/{datasource_name()}"
+    datasource = datasource_name()
+
+    try:
+        check_conflict(
+            read_remote_pushed_at(resolved, target, datasource), force=force,
+        )
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1)
+
+    storage_val = f"{resolved}/{datasource}"
 
     with connect(storage=storage_val, target_name=target) as conn:
-        name = datasource_name()
-        conn.execute(f"USE {name}")
+        conn.execute(f"USE {datasource}")
         conn.execute(query)
         if not conn.description:
             return

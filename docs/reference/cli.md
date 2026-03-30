@@ -1,6 +1,6 @@
 # CLI Reference
 
-fdl provides 8 commands for managing Frozen DuckLake catalogs.
+fdl provides 7 commands for managing Frozen DuckLake catalogs.
 
 ## Commands
 
@@ -11,7 +11,6 @@ fdl provides 8 commands for managing Frozen DuckLake catalogs.
 | [`push`](#push) | Upload catalog to target |
 | [`run`](#run) | Run a command with injected env vars |
 | [`sql`](#sql) | Execute SQL against the catalog |
-| [`checkpoint`](#checkpoint) | Run DuckLake maintenance |
 | [`config`](#config) | Get or set configuration |
 | [`serve`](#serve) | Start an HTTP server |
 
@@ -101,13 +100,25 @@ See [Working with Data](../guide/working-with-data.md#fdl-run) for details on in
 Execute a SQL query against the DuckLake catalog.
 
 ```
-fdl sql TARGET QUERY
+fdl sql TARGET QUERY [--force]
 ```
 
-| Argument | Description |
+| Argument / Option | Description |
 |---|---|
 | `TARGET` | Target name (e.g. `default`) |
 | `QUERY` | SQL query to execute |
+| `--force`, `-f` | Skip stale catalog check |
+
+### Stale catalog check
+
+Before executing, fdl verifies that the local catalog is up to date with the remote. If someone else has pushed since your last pull, the command is rejected:
+
+```
+Local catalog is stale (remote pushed at 2026-04-01T00:00:00+00:00).
+Run 'fdl pull' first, or use --force to override.
+```
+
+This prevents queries against outdated data and, for maintenance operations like CHECKPOINT, accidental deletion of active files added by another user's push.
 
 Examples:
 
@@ -120,55 +131,12 @@ fdl sql default "INSERT INTO cities VALUES ('Tokyo', 14000000), ('Shanghai', 249
 
 # Query
 fdl sql default "SELECT * FROM cities ORDER BY population DESC"
+
+# Skip stale catalog check
+fdl sql default --force "SELECT * FROM cities"
 ```
 
 See [Working with Data](../guide/working-with-data.md) for details on how the catalog connection works and caveats.
-
-## checkpoint
-
-Run DuckLake maintenance on the catalog. Executes the DuckLake [`CHECKPOINT`](https://ducklake.select/docs/stable/duckdb/maintenance/checkpoint) statement, which performs:
-
-- Expire old snapshots
-- Merge adjacent small files
-- Rewrite data files with many deletions
-- Clean up files scheduled for deletion
-- Delete orphaned files not tracked by the catalog
-
-```
-fdl checkpoint TARGET [--force]
-```
-
-| Argument / Option | Description |
-|---|---|
-| `TARGET` | Target name (e.g. `default`) |
-| `--force`, `-f` | Skip stale catalog check |
-
-### Stale catalog check
-
-Before running maintenance, fdl verifies that the local catalog is up to date with the remote. If someone else has pushed since your last pull, checkpoint is rejected:
-
-```
-Local catalog is stale (remote pushed at 2026-04-01T00:00:00+00:00).
-Run 'fdl pull' first, or use --force to override.
-```
-
-This prevents accidental deletion of active files that were added by another user's push but are not yet in your local catalog.
-
-Examples:
-
-```bash
-fdl checkpoint default
-
-# Skip stale catalog check
-fdl checkpoint default --force
-```
-
-For individual maintenance functions, use `fdl sql`:
-
-```bash
-fdl sql default "CALL ducklake_cleanup_old_files('my_dataset', cleanup_all => true)"
-fdl sql default "CALL ducklake_delete_orphaned_files('my_dataset', dry_run => true)"
-```
 
 ## config
 
