@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.5.2 (2026-04-02)
+
+### Bug Fixes
+
+- Isolate .fdl catalog directory per target
+  ([`1b889bf`](https://github.com/flo8s/fdl/commit/1b889bfb53bb29cf1a2b81e9690731cb9f48b893))
+
+Each target (default, local, etc.) now gets its own subdirectory under .fdl/ to prevent catalog
+  state conflicts when switching between targets.
+
+.fdl/ducklake.duckdb → .fdl/{target}/ducklake.duckdb .fdl/meta.json → .fdl/{target}/meta.json
+
+### Chores
+
+- Add Google Analytics to documentation site
+  ([`bac7f24`](https://github.com/flo8s/fdl/commit/bac7f24a6477b6f976c93c427ff61cdcc29c0dac))
+
+### Continuous Integration
+
+- Fix docs workflow to watch zensical.toml instead of mkdocs.yml
+  ([`6378ed3`](https://github.com/flo8s/fdl/commit/6378ed32e562967112b2d41fdffbc62d220d8282))
+
+### Documentation
+
+- Add semantic-release versioning rules to CLAUDE.md
+  ([`dc393ad`](https://github.com/flo8s/fdl/commit/dc393ad112b08048f2bb96cb078847456ec563f6))
+
+- Refine "Why fdl" section for clarity and conciseness
+  ([`1f63113`](https://github.com/flo8s/fdl/commit/1f63113fbfaaf4ac6e971fb2ac5953ed67ffe10d))
+
+- Rewrite README with quick start workflow and feature overview
+  ([`8627c14`](https://github.com/flo8s/fdl/commit/8627c140242020b678a03a3d29714b501888b8d4))
+
+- Update .fdl paths to reflect target-based layout
+  ([`82f4872`](https://github.com/flo8s/fdl/commit/82f487277024878d6f538dc5af59ee21cb982fc5))
+
+### Testing
+
+- Update path assertions for target-based .fdl layout
+  ([`a00c417`](https://github.com/flo8s/fdl/commit/a00c417eb342f594ccb46421ab667813bbf8f361))
+
+
 ## v0.5.1 (2026-03-30)
 
 ### Bug Fixes
