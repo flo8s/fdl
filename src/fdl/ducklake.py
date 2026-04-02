@@ -98,6 +98,7 @@ def init_ducklake(
     """Initialize DuckLake catalog (skip if exists)."""
     catalog_file = dist_dir / (DUCKLAKE_SQLITE if sqlite else DUCKLAKE_FILE)
     if catalog_file.exists():
+        console.print(f"DuckLake: [dim]{catalog_file}[/dim]")
         return
 
     from fdl.config import datasource_name
