@@ -217,8 +217,14 @@ def run(ctx: typer.Context) -> None:
             "No command specified. Usage: fdl run TARGET -- COMMAND"
         )
 
+    from fdl import fdl_target_dir
+
     resolved = _resolve_target(target)
     storage_val = f"{resolved}/{datasource_name()}"
+
+    # Ensure target catalog directory exists (DuckLake ATTACH needs it)
+    target_dir = Path.cwd() / fdl_target_dir(target)
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     # Build env with all FDL_* values (won't override existing env vars)
     env = os.environ.copy()
