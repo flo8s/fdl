@@ -26,7 +26,7 @@ You can modify `DATA_PATH` in the DuckLake catalog's internal metadata table:
 ```python
 import duckdb
 
-conn = duckdb.connect(".fdl/ducklake.duckdb")
+conn = duckdb.connect(".fdl/default/ducklake.duckdb")
 conn.execute("""
     UPDATE ducklake_metadata
     SET value = 'https://data.example.com/my_dataset/ducklake.duckdb.files/'

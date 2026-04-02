@@ -32,7 +32,7 @@ Local target example:
 ```bash
 FDL_STORAGE=~/.local/share/fdl/my_dataset
 FDL_DATA_PATH=~/.local/share/fdl/my_dataset/ducklake.duckdb.files/
-FDL_CATALOG=.fdl/ducklake.duckdb
+FDL_CATALOG=.fdl/{target}/ducklake.duckdb
 ```
 
 S3 target example:
@@ -40,7 +40,7 @@ S3 target example:
 ```bash
 FDL_STORAGE=s3://my-bucket/my_dataset
 FDL_DATA_PATH=s3://my-bucket/my_dataset/ducklake.duckdb.files/
-FDL_CATALOG=.fdl/ducklake.duckdb
+FDL_CATALOG=.fdl/{target}/ducklake.duckdb
 FDL_S3_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 FDL_S3_ACCESS_KEY_ID=...
 FDL_S3_SECRET_ACCESS_KEY=...

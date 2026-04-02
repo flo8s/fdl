@@ -22,7 +22,7 @@ The SQLite catalog is only used during development. `fdl push` automatically con
 fdl init my_dataset --sqlite
 ```
 
-This creates `.fdl/ducklake.sqlite` instead of `.fdl/ducklake.duckdb`.
+This creates `.fdl/{target}/ducklake.sqlite` instead of `.fdl/{target}/ducklake.duckdb`.
 
 ### 2. Configure dlt destination
 

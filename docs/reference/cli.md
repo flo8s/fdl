@@ -35,7 +35,7 @@ When flags are omitted, you'll be prompted interactively.
 Generated files:
 
 - `fdl.toml` — Project config (with target settings)
-- `.fdl/ducklake.duckdb` — DuckLake catalog (or `.fdl/ducklake.sqlite`)
+- `.fdl/{target}/ducklake.duckdb` — DuckLake catalog (or `.fdl/{target}/ducklake.sqlite`)
 
 On failure, `fdl.toml` and `.fdl/` are automatically rolled back.
 
