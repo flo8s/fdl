@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.5.4 (2026-04-02)
+
+### Bug Fixes
+
+- Auto-initialize catalog on first fdl run for a target
+  ([`71f2c49`](https://github.com/flo8s/fdl/commit/71f2c497b0b1611ec3cbc25d6299ffd89920f9ff))
+
+When fdl run is invoked for a target that has no catalog yet, initialize it automatically so
+  pipelines and dbt can attach without requiring a separate fdl init step.
+
+
 ## v0.5.3 (2026-04-02)
 
 ### Bug Fixes
