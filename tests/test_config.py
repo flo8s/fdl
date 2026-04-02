@@ -10,6 +10,7 @@ import pytest
 
 from fdl.config import (
     catalog_path,
+    catalog_type,
     data_path,
     datasource_name,
     ducklake_url,
@@ -318,3 +319,20 @@ def test_env_dict_omits_s3_vars_for_local_target(fdl_project_dir):
         storage_override=str(fdl_project_dir / "storage" / "ds"),
     )
     assert not any(k.startswith("FDL_S3_") for k in env)
+
+
+# --- catalog_type ---
+
+
+def test_catalog_type_defaults_to_duckdb(fdl_project_dir):
+    """catalog_type returns 'duckdb' when fdl.toml has no catalog key."""
+    set_value("name", "ds", fdl_project_dir / "fdl.toml")
+    assert catalog_type(fdl_project_dir) == "duckdb"
+
+
+def test_catalog_type_reads_sqlite(fdl_project_dir):
+    """catalog_type returns 'sqlite' when fdl.toml says catalog = 'sqlite'."""
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("catalog", "sqlite", path)
+    assert catalog_type(fdl_project_dir) == "sqlite"

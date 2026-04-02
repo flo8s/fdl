@@ -87,6 +87,13 @@ def datasource_name(project_dir: Path | None = None) -> str:
     return name
 
 
+def catalog_type(project_dir: Path | None = None) -> str:
+    """Catalog type from fdl.toml ('duckdb' or 'sqlite')."""
+    project_dir = project_dir or Path.cwd()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    return data.get("catalog", "duckdb")
+
+
 def storage(target_name: str | None = None) -> str:
     """FDL_STORAGE: base path for data files (env var or default .fdl/{target})."""
     from fdl import FDL_DIR, fdl_target_dir
@@ -114,7 +121,13 @@ def catalog_path(target_name: str | None = None) -> str:
     sqlite = base / DUCKLAKE_SQLITE
     if sqlite.exists():
         return str(sqlite)
-    return str(base / DUCKLAKE_FILE)
+    duckdb = base / DUCKLAKE_FILE
+    if duckdb.exists():
+        return str(duckdb)
+    # Neither exists: fall back to catalog type from fdl.toml
+    if catalog_type() == "sqlite":
+        return str(sqlite)
+    return str(duckdb)
 
 
 def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":
