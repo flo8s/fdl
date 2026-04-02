@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.7 (2026-04-02)
+
+### Bug Fixes
+
+- Use CREATE SECRET for S3 configuration in DuckDB
+  ([`410fac3`](https://github.com/flo8s/fdl/commit/410fac3ea06667b15c0bbe98a37b3be619eb962c))
+
+
 ## v0.5.6 (2026-04-02)
 
 ### Bug Fixes

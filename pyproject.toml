@@ -1,6 +1,6 @@
 [project]
 name = "frozen-ducklake"
-version = "0.5.6"
+version = "0.5.7"
 description = "Frozen DuckLake CLI"
 readme = "README.md"
 license = "MIT"
