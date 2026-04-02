@@ -222,9 +222,14 @@ def run(ctx: typer.Context) -> None:
     resolved = _resolve_target(target)
     storage_val = f"{resolved}/{datasource_name()}"
 
-    # Ensure target catalog directory exists (DuckLake ATTACH needs it)
+    # Ensure target catalog exists (initialize on first run)
+    from fdl.config import target_public_url
+    from fdl.ducklake import init_ducklake
+
     target_dir = Path.cwd() / fdl_target_dir(target)
     target_dir.mkdir(parents=True, exist_ok=True)
+    pub = target_public_url(target) or "http://localhost:4001"
+    init_ducklake(target_dir, Path.cwd(), public_url=pub)
 
     # Build env with all FDL_* values (won't override existing env vars)
     env = os.environ.copy()
