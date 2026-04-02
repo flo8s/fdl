@@ -46,10 +46,17 @@ def connect(
 
     name = datasource_name()
 
+    import os
+
     from fdl import fdl_target_dir
 
-    base = fdl_target_dir(target_name) if target_name else FDL_DIR
-    ducklake_path = base / DUCKLAKE_FILE
+    # FDL_CATALOG env var (set by fdl run) takes precedence over target_name
+    env_catalog = os.environ.get("FDL_CATALOG")
+    if env_catalog:
+        ducklake_path = Path(env_catalog)
+    else:
+        base = fdl_target_dir(target_name) if target_name else FDL_DIR
+        ducklake_path = base / DUCKLAKE_FILE
     if not ducklake_path.exists():
         msg = f"{ducklake_path} not found. Run 'fdl init' or 'fdl pull' first."
         raise FileNotFoundError(msg)
