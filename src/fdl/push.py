@@ -12,13 +12,13 @@ from fdl.console import console
 
 def push_to_local(
     output_dir: Path, dist_dir: Path, datasource: str, project_dir: Path,
-    *, force: bool = False,
+    *, force: bool = False, target_name: str,
 ) -> None:
     """Copy artifacts to a local directory."""
     from fdl.meta import check_conflict, read_pushed_at, stamp, write_meta
 
     remote_meta = output_dir / datasource / FDL_DIR / META_JSON
-    check_conflict(read_pushed_at(remote_meta), force=force)
+    check_conflict(read_pushed_at(remote_meta), force=force, target_name=target_name)
 
     dest = output_dir / datasource
     dest.mkdir(parents=True, exist_ok=True)
@@ -36,9 +36,11 @@ def push_to_local(
         shutil.copy2(toml_src, dest / PROJECT_CONFIG)
 
     # .fdl/meta.json (write after catalog for fail-safe ordering)
+    from fdl import fdl_target_dir
+
     pushed_at = stamp()
     write_meta(dest / FDL_DIR / META_JSON, pushed_at)
-    write_meta(FDL_DIR / META_JSON, pushed_at)
+    write_meta(fdl_target_dir(target_name) / META_JSON, pushed_at)
 
 
 def _upload(
@@ -75,14 +77,14 @@ def _upload_if_exists(
 
 def push_to_s3(
     client, bucket: str, dist_dir: Path, datasource: str, project_dir: Path,
-    *, force: bool = False,
+    *, force: bool = False, target_name: str,
 ) -> None:
     """Upload artifacts to S3."""
     import json
 
     from fdl.meta import check_conflict, read_pushed_at_s3, stamp, write_meta
 
-    check_conflict(read_pushed_at_s3(client, bucket, datasource), force=force)
+    check_conflict(read_pushed_at_s3(client, bucket, datasource), force=force, target_name=target_name)
 
     _upload(
         client,
@@ -109,6 +111,8 @@ def push_to_s3(
     )
 
     # .fdl/meta.json (upload after catalog for fail-safe ordering)
+    from fdl import fdl_target_dir
+
     pushed_at = stamp()
     client.put_object(
         Bucket=bucket,
@@ -116,4 +120,4 @@ def push_to_s3(
         Body=json.dumps({"pushed_at": pushed_at}).encode(),
         ContentType="application/json; charset=utf-8",
     )
-    write_meta(FDL_DIR / META_JSON, pushed_at)
+    write_meta(fdl_target_dir(target_name) / META_JSON, pushed_at)

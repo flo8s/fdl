@@ -8,7 +8,7 @@ from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, META_JSON
 from fdl.console import console
 
 
-def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
+def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str, *, target_name: str) -> bool:
     """Copy catalog from a local directory into dist/.
 
     Returns True if catalog was found.
@@ -31,9 +31,9 @@ def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str) -> bool:
     meta_file = src / FDL_DIR / META_JSON
     if meta_file.exists():
         data = json.loads(meta_file.read_text())
-        sync_meta(data.get("pushed_at"))
+        sync_meta(data.get("pushed_at"), target_name)
     else:
-        sync_meta(None)
+        sync_meta(None, target_name)
 
     return True
 
@@ -53,7 +53,7 @@ def _download_file(client, bucket: str, key: str, dest: Path) -> bool:
         raise
 
 
-def fetch_from_s3(client, bucket: str, dist_dir: Path, datasource: str) -> bool:
+def fetch_from_s3(client, bucket: str, dist_dir: Path, datasource: str, *, target_name: str) -> bool:
     """Download DuckLake catalog files from S3.
 
     Returns True if ducklake.duckdb was found (fetch succeeded).
@@ -70,6 +70,6 @@ def fetch_from_s3(client, bucket: str, dist_dir: Path, datasource: str) -> bool:
     # Sync pushed_at from remote meta
     from fdl.meta import read_pushed_at_s3, sync_meta
 
-    sync_meta(read_pushed_at_s3(client, bucket, datasource))
+    sync_meta(read_pushed_at_s3(client, bucket, datasource), target_name)
 
     return found

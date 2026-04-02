@@ -7,6 +7,11 @@ DUCKLAKE_SQLITE = "ducklake.sqlite"
 META_JSON = "meta.json"
 
 
+def fdl_target_dir(target_name: str) -> Path:
+    """Target-specific directory under .fdl/."""
+    return FDL_DIR / target_name
+
+
 def ducklake_data_path(catalog_url: str) -> str:
     """Derive DuckLake DATA_PATH from a catalog URL or path."""
     return f"{catalog_url}.files/"

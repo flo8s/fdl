@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 from typer.main import Typer
 
-from fdl import FDL_DIR
+from fdl import FDL_DIR  # noqa: F401
 from fdl.console import console
 
 app = typer.Typer(pretty_exceptions_short=True, invoke_without_command=True)
@@ -91,7 +91,6 @@ def init(
     else:
         default_name = _sanitize_name(dataset_dir.resolve().name)
         name = typer.prompt("Datasource name", default=default_name)
-    dist_dir = dataset_dir / FDL_DIR
     config_path = dataset_dir / PROJECT_CONFIG
 
     if config_path.exists():
@@ -105,6 +104,9 @@ def init(
     if target_url is None:
         target_url = typer.prompt("Target URL", default=default_target_url())
 
+    from fdl import fdl_target_dir
+
+    dist_dir = dataset_dir / fdl_target_dir(target_name)
     try:
         # fdl.toml
         set_value("name", name, config_path)
@@ -112,7 +114,7 @@ def init(
         set_value(f"targets.{target_name}.url", target_url, config_path)
         set_value(f"targets.{target_name}.public_url", public_url, config_path)
 
-        # .fdl/ + DuckLake catalog
+        # .fdl/{target}/ + DuckLake catalog
         init_ducklake(dist_dir, dataset_dir, public_url=public_url, sqlite=sqlite)
 
     except Exception:
@@ -121,6 +123,9 @@ def init(
             config_path.unlink()
         if dist_dir.exists():
             shutil.rmtree(dist_dir)
+        fdl_dir = dataset_dir / FDL_DIR
+        if fdl_dir.exists() and not any(fdl_dir.iterdir()):
+            fdl_dir.rmdir()
         raise
 
     console.print(f"[green]Initialized fdl project: {name}[/green]")
@@ -131,10 +136,11 @@ def pull(
     source: str = typer.Argument(..., help="Target name (e.g. default)"),
 ) -> None:
     """Pull DuckLake catalog from a target."""
+    from fdl import fdl_target_dir
     from fdl.config import datasource_name
 
     dataset_dir = Path.cwd()
-    dist_dir = dataset_dir / FDL_DIR
+    dist_dir = dataset_dir / fdl_target_dir(source)
     datasource = datasource_name(dataset_dir)
     resolved = _resolve_target(source)
     console.print(f"[bold]--- pull: {datasource} ← {resolved} ---[/bold]")
@@ -146,11 +152,11 @@ def pull(
 
         s3 = target_s3_config(source)
         client = create_s3_client(s3)
-        fetch_from_s3(client, s3.bucket, dist_dir, datasource)
+        fetch_from_s3(client, s3.bucket, dist_dir, datasource, target_name=source)
     else:
         from fdl.pull import pull_from_local
 
-        pull_from_local(Path(resolved), dist_dir, datasource)
+        pull_from_local(Path(resolved), dist_dir, datasource, target_name=source)
 
 
 @app.command()
@@ -159,17 +165,18 @@ def push(
     force: bool = typer.Option(False, "--force", "-f", help="Override conflict detection"),
 ) -> None:
     """Push catalog to a target."""
+    from fdl import fdl_target_dir
     from fdl.config import datasource_name
     from fdl.ducklake import convert_sqlite_to_duckdb
     from fdl.meta import PushConflictError
 
     dataset_dir = Path.cwd()
-    dist_dir = dataset_dir / FDL_DIR
+    dist_dir = dataset_dir / fdl_target_dir(dest)
     datasource = datasource_name(dataset_dir)
 
     resolved = _resolve_target(dest)
     console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
-    convert_sqlite_to_duckdb(dataset_dir)
+    convert_sqlite_to_duckdb(dataset_dir, dest)
 
     try:
         if resolved.startswith("s3://"):
@@ -179,11 +186,11 @@ def push(
 
             s3 = target_s3_config(dest)
             client = create_s3_client(s3)
-            push_to_s3(client, s3.bucket, dist_dir, datasource, dataset_dir, force=force)
+            push_to_s3(client, s3.bucket, dist_dir, datasource, dataset_dir, force=force, target_name=dest)
         else:
             from fdl.push import push_to_local
 
-            push_to_local(Path(resolved), dist_dir, datasource, dataset_dir, force=force)
+            push_to_local(Path(resolved), dist_dir, datasource, dataset_dir, force=force, target_name=dest)
     except PushConflictError as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1)
@@ -291,7 +298,7 @@ def sql(
 
     try:
         check_conflict(
-            read_remote_pushed_at(resolved, target, datasource), force=force,
+            read_remote_pushed_at(resolved, target, datasource), force=force, target_name=target,
         )
     except PushConflictError as e:
         console.print(f"[red]{e}[/red]")

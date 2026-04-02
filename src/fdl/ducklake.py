@@ -46,7 +46,10 @@ def connect(
 
     name = datasource_name()
 
-    ducklake_path = FDL_DIR / DUCKLAKE_FILE
+    from fdl import fdl_target_dir
+
+    base = fdl_target_dir(target_name) if target_name else FDL_DIR
+    ducklake_path = base / DUCKLAKE_FILE
     if not ducklake_path.exists():
         msg = f"{ducklake_path} not found. Run 'fdl init' or 'fdl pull' first."
         raise FileNotFoundError(msg)
@@ -112,9 +115,11 @@ def init_ducklake(
     conn.close()
 
 
-def convert_sqlite_to_duckdb(dataset_dir: Path) -> None:
+def convert_sqlite_to_duckdb(dataset_dir: Path, target_name: str) -> None:
     """Convert SQLite catalog to DuckDB format, replacing ducklake.duckdb."""
-    dist_dir = dataset_dir / FDL_DIR
+    from fdl import fdl_target_dir
+
+    dist_dir = dataset_dir / fdl_target_dir(target_name)
     sqlite_file = dist_dir / DUCKLAKE_SQLITE
     duckdb_file = dist_dir / DUCKLAKE_FILE
     if not sqlite_file.exists():

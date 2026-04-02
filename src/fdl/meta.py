@@ -61,9 +61,11 @@ def is_stale(local_pushed_at: str | None, remote_pushed_at: str | None) -> bool:
     return remote_pushed_at > local_pushed_at
 
 
-def check_conflict(remote_pushed_at: str | None, *, force: bool) -> None:
+def check_conflict(remote_pushed_at: str | None, *, force: bool, target_name: str) -> None:
     """Compare remote pushed_at with local record. Raise on conflict."""
-    local_pushed_at = read_pushed_at(FDL_DIR / META_JSON)
+    from fdl import fdl_target_dir
+
+    local_pushed_at = read_pushed_at(fdl_target_dir(target_name) / META_JSON)
 
     if not is_stale(local_pushed_at, remote_pushed_at):
         return
@@ -83,14 +85,16 @@ def write_meta(path: Path, pushed_at: str) -> None:
     path.write_text(json.dumps({"pushed_at": pushed_at}))
 
 
-def sync_meta(pushed_at: str | None) -> None:
-    """Write or clear local .fdl/meta.json to match remote state.
+def sync_meta(pushed_at: str | None, target_name: str) -> None:
+    """Write or clear local .fdl/{target}/meta.json to match remote state.
 
     When remote has no meta.json (pre-conflict-detection push or never pushed),
     the local copy is removed so both sides are in the "no conflict detection"
     state. The next push will create meta.json on both sides.
     """
-    path = FDL_DIR / META_JSON
+    from fdl import fdl_target_dir
+
+    path = fdl_target_dir(target_name) / META_JSON
     if pushed_at is None:
         path.unlink(missing_ok=True)
     else:

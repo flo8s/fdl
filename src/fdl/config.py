@@ -87,32 +87,34 @@ def datasource_name(project_dir: Path | None = None) -> str:
     return name
 
 
-def storage() -> str:
-    """FDL_STORAGE: base path for data files (env var or default .fdl)."""
-    from fdl import FDL_DIR
+def storage(target_name: str | None = None) -> str:
+    """FDL_STORAGE: base path for data files (env var or default .fdl/{target})."""
+    from fdl import FDL_DIR, fdl_target_dir
 
-    return os.environ.get("FDL_STORAGE", str(FDL_DIR))
+    base = fdl_target_dir(target_name) if target_name else FDL_DIR
+    return os.environ.get("FDL_STORAGE", str(base))
 
 
-def data_path() -> str:
+def data_path(target_name: str | None = None) -> str:
     """FDL_DATA_PATH: path to data files directory."""
     from fdl import DUCKLAKE_FILE, ducklake_data_path
 
     return os.environ.get("FDL_DATA_PATH") or ducklake_data_path(
-        f"{storage()}/{DUCKLAKE_FILE}"
+        f"{storage(target_name)}/{DUCKLAKE_FILE}"
     )
 
 
-def catalog_path() -> str:
+def catalog_path(target_name: str | None = None) -> str:
     """FDL_CATALOG: path to the DuckLake catalog file (auto-detect sqlite/duckdb)."""
     if v := os.environ.get("FDL_CATALOG"):
         return v
-    from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR
+    from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, fdl_target_dir
 
-    sqlite = FDL_DIR / DUCKLAKE_SQLITE
+    base = fdl_target_dir(target_name) if target_name else FDL_DIR
+    sqlite = base / DUCKLAKE_SQLITE
     if sqlite.exists():
         return str(sqlite)
-    return str(FDL_DIR / DUCKLAKE_FILE)
+    return str(base / DUCKLAKE_FILE)
 
 
 def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":
@@ -148,7 +150,7 @@ def fdl_env_dict(
     result = {
         "FDL_STORAGE": storage_val,
         "FDL_DATA_PATH": ducklake_data_path(f"{storage_val}/{DUCKLAKE_FILE}"),
-        "FDL_CATALOG": catalog_path(),
+        "FDL_CATALOG": catalog_path(target_name),
     }
     if target_name:
         try:
