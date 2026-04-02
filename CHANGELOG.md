@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.5.6 (2026-04-02)
+
+### Bug Fixes
+
+- Log catalog path on every fdl run
+  ([`1e04295`](https://github.com/flo8s/fdl/commit/1e04295b33f4cb6fd1f9dba8baa39542d4f6eae5))
+
+- Set PYTHONUNBUFFERED environment variable in run command
+  ([`ea07bf7`](https://github.com/flo8s/fdl/commit/ea07bf708e7b51db9a948114cce9ff96ecca8e50))
+
+
 ## v0.5.5 (2026-04-02)
 
 ### Bug Fixes
