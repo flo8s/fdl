@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.5.3 (2026-04-02)
+
+### Bug Fixes
+
+- Ensure target catalog directory exists in fdl run
+  ([`66868df`](https://github.com/flo8s/fdl/commit/66868df18bd8e0bb1fe69e77be2bb8fdc96609fd))
+
+Create .fdl/{target}/ before subprocess execution so DuckLake ATTACH can create the catalog file on
+  first run. Also respect FDL_CATALOG env var in connect() for pipelines that hardcode target_name.
+
+- Respect FDL_CATALOG env var in connect()
+  ([`577d924`](https://github.com/flo8s/fdl/commit/577d924419cd22cb7465c3daca57d0c5b8045f2d))
+
+When running under fdl run, FDL_CATALOG is set to the correct target-specific path. Pipelines that
+  hardcode target_name in connect() calls now use the env var instead.
+
+
 ## v0.5.2 (2026-04-02)
 
 ### Bug Fixes
