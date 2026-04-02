@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.5.5 (2026-04-02)
+
+### Bug Fixes
+
+- Support sqlite catalog type in fdl run auto-init
+  ([`eb7d6f7`](https://github.com/flo8s/fdl/commit/eb7d6f78b069bc2135ba00df22e5c3c8929df399))
+
+Read catalog type from fdl.toml to correctly initialize sqlite catalogs for dlt-based datasets. Also
+  fall back to fdl.toml when auto-detecting catalog path for new targets.
+
+### Chores
+
+- Sync uv.lock
+  ([`171f4b9`](https://github.com/flo8s/fdl/commit/171f4b922ddc2516823dd2e11b479a4b0305e305))
+
+
 ## v0.5.4 (2026-04-02)
 
 ### Bug Fixes
