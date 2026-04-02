@@ -236,6 +236,7 @@ def run(ctx: typer.Context) -> None:
     for key, value in fdl_env_dict(target_name=target, storage_override=storage_val).items():
         if key not in env:
             env[key] = value
+    env.setdefault("PYTHONUNBUFFERED", "1")
 
     result = subprocess.run(cmd, env=env)
     raise SystemExit(result.returncode)
