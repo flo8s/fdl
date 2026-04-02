@@ -22,11 +22,14 @@ def configure_duckdb_s3(conn, s3: S3Config) -> None:
     """Configure a DuckDB connection for S3 access."""
     conn.execute("INSTALL httpfs; LOAD httpfs;")
     conn.execute(f"""
-        SET s3_url_style = 'path';
-        SET s3_access_key_id = '{s3.access_key_id}';
-        SET s3_secret_access_key = '{s3.secret_access_key}';
-        SET s3_endpoint = '{s3.endpoint_host}';
-        SET s3_region = 'auto';
+        CREATE SECRET (
+            TYPE s3,
+            KEY_ID '{s3.access_key_id}',
+            SECRET '{s3.secret_access_key}',
+            ENDPOINT '{s3.endpoint_host}',
+            URL_STYLE 'path',
+            REGION 'auto'
+        )
     """)
 
 
