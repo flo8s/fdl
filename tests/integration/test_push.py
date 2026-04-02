@@ -73,7 +73,7 @@ def test_first_push_creates_meta_json(fdl_project_dir: Path):
     assert "pushed_at" in remote_data
 
     # Local meta.json
-    local_meta = fdl_project_dir / FDL_DIR / META_JSON
+    local_meta = fdl_project_dir / FDL_DIR / "default" / META_JSON
     assert local_meta.exists()
     local_data = json.loads(local_meta.read_text())
     assert local_data["pushed_at"] == remote_data["pushed_at"]

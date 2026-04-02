@@ -21,7 +21,7 @@ def test_default_catalog_is_duckdb(fdl_project_dir: Path):
     assert (fdl_project_dir / "fdl.toml").exists()
     assert (fdl_project_dir / ".fdl").is_dir()
 
-    db_path = fdl_project_dir / ".fdl" / "ducklake.duckdb"
+    db_path = fdl_project_dir / ".fdl" / "default" / "ducklake.duckdb"
     assert db_path.exists()
     conn = duckdb.connect(str(db_path), read_only=True)
     tables = conn.execute("SHOW TABLES").fetchall()
@@ -94,7 +94,7 @@ def test_double_init_preserves_existing_files(fdl_project_dir: Path):
     ])
     assert result.exit_code != 0
     assert (fdl_project_dir / "fdl.toml").read_text() == original_toml
-    assert (fdl_project_dir / ".fdl" / "ducklake.duckdb").exists()
+    assert (fdl_project_dir / ".fdl" / "default" / "ducklake.duckdb").exists()
 
 
 def test_failure_cleans_up_partial_files(fdl_project_dir: Path):
@@ -127,7 +127,7 @@ def test_sqlite_flag_creates_sqlite_catalog(fdl_project_dir: Path):
     ])
     assert result.exit_code == 0, result.output
 
-    db_path = fdl_project_dir / ".fdl" / "ducklake.sqlite"
+    db_path = fdl_project_dir / ".fdl" / "default" / "ducklake.sqlite"
     assert db_path.exists()
     conn = sqlite3.connect(db_path)
     tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()

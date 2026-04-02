@@ -32,7 +32,7 @@ def test_pulled_catalog_is_usable(fdl_project_dir):
     cli.invoke(app, ["push", "default"])
 
     # Delete local catalog
-    (fdl_project_dir / ".fdl" / "ducklake.duckdb").unlink()
+    (fdl_project_dir / ".fdl" / "default" / "ducklake.duckdb").unlink()
 
     # Pull and verify data survived
     cli.invoke(app, ["pull", "default"])
@@ -61,7 +61,7 @@ def test_pull_syncs_meta_json(fdl_project_dir):
     remote_pushed_at = json.loads(remote_meta.read_text())["pushed_at"]
 
     # Delete local meta.json to simulate a fresh clone
-    local_meta = fdl_project_dir / FDL_DIR / META_JSON
+    local_meta = fdl_project_dir / FDL_DIR / "default" / META_JSON
     local_meta.unlink()
 
     cli.invoke(app, ["pull", "default"])
@@ -123,8 +123,8 @@ def test_pull_from_empty_target_does_not_restore_catalog(fdl_project_dir):
     ])
 
     # Delete local catalog without pushing first
-    (fdl_project_dir / ".fdl" / "ducklake.duckdb").unlink()
+    (fdl_project_dir / ".fdl" / "default" / "ducklake.duckdb").unlink()
 
     # Pull from empty target
     cli.invoke(app, ["pull", "default"])
-    assert not (fdl_project_dir / ".fdl" / "ducklake.duckdb").exists()
+    assert not (fdl_project_dir / ".fdl" / "default" / "ducklake.duckdb").exists()

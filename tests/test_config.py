@@ -284,14 +284,14 @@ def test_env_dict_contains_storage_data_path_catalog(fdl_project_dir):
 
     Spec: FDL_STORAGE = {target_url}/{datasource}
           FDL_DATA_PATH = {FDL_STORAGE}/ducklake.duckdb.files/
-          FDL_CATALOG = .fdl/ducklake.duckdb (auto-detected)
+          FDL_CATALOG = .fdl/{target}/ducklake.duckdb (auto-detected)
     """
     _setup_target(fdl_project_dir, url=str(fdl_project_dir / "storage"))
     storage_val = str(fdl_project_dir / "storage" / "ds")
     env = fdl_env_dict(target_name="default", storage_override=storage_val)
     assert env["FDL_STORAGE"] == storage_val
     assert env["FDL_DATA_PATH"] == f"{storage_val}/ducklake.duckdb.files/"
-    assert env["FDL_CATALOG"] == ".fdl/ducklake.duckdb"
+    assert env["FDL_CATALOG"] == ".fdl/default/ducklake.duckdb"
 
 
 def test_env_dict_includes_s3_vars_for_s3_target(fdl_project_dir):

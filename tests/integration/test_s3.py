@@ -125,11 +125,11 @@ def test_pull_restores_catalog_from_s3(s3_project, moto_s3):
     cli.invoke(app, ["push", "default"])
 
     # Delete local catalog
-    (s3_project / ".fdl" / "ducklake.duckdb").unlink()
+    (s3_project / ".fdl" / "default" / "ducklake.duckdb").unlink()
 
     result = cli.invoke(app, ["pull", "default"])
     assert result.exit_code == 0, result.output
-    assert (s3_project / ".fdl" / "ducklake.duckdb").exists()
+    assert (s3_project / ".fdl" / "default" / "ducklake.duckdb").exists()
 
 
 # NOTE: S3 checkpoint is not tested here because DuckDB's CHECKPOINT
