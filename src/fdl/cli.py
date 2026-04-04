@@ -134,10 +134,12 @@ def init(
 @app.command()
 def pull(
     source: str = typer.Argument(..., help="Target name (e.g. default)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force re-download even if up to date"),
 ) -> None:
     """Pull DuckLake catalog from a target."""
     from fdl import fdl_target_dir
     from fdl.config import datasource_name
+    from fdl.pull import do_pull, pull_if_needed
 
     dataset_dir = Path.cwd()
     dist_dir = dataset_dir / fdl_target_dir(source)
@@ -145,18 +147,14 @@ def pull(
     resolved = _resolve_target(source)
     console.print(f"[bold]--- pull: {datasource} ← {resolved} ---[/bold]")
 
-    if resolved.startswith("s3://"):
-        from fdl.config import target_s3_config
-        from fdl.pull import fetch_from_s3
-        from fdl.s3 import create_s3_client
-
-        s3 = target_s3_config(source)
-        client = create_s3_client(s3)
-        fetch_from_s3(client, s3.bucket, dist_dir, datasource, target_name=source)
+    if force:
+        do_pull(resolved, source, dist_dir, datasource)
     else:
-        from fdl.pull import pull_from_local
-
-        pull_from_local(Path(resolved), dist_dir, datasource, target_name=source)
+        reason = pull_if_needed(dist_dir, resolved, source, datasource)
+        if reason:
+            console.print(f"  {reason}")
+        else:
+            console.print("  Already up to date")
 
 
 @app.command()

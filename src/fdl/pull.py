@@ -1,11 +1,49 @@
 """Pull: download DuckLake catalog from S3 or local directory."""
 
+from __future__ import annotations
+
 import json
 import shutil
 from pathlib import Path
 
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, META_JSON
 from fdl.console import console
+
+
+def do_pull(resolved: str, target: str, dist_dir: Path, datasource: str) -> None:
+    """Pull catalog from a target (S3 or local)."""
+    if resolved.startswith("s3://"):
+        from fdl.config import target_s3_config
+        from fdl.s3 import create_s3_client
+
+        s3 = target_s3_config(target)
+        client = create_s3_client(s3)
+        fetch_from_s3(client, s3.bucket, dist_dir, datasource, target_name=target)
+    else:
+        pull_from_local(Path(resolved), dist_dir, datasource, target_name=target)
+
+
+def pull_if_needed(target_dir: Path, resolved: str, target: str, datasource: str) -> str | None:
+    """Pull if local catalog is missing, unsynced, or stale.
+
+    Returns the reason for pulling, or None if already up to date.
+    """
+    if not (target_dir / DUCKLAKE_FILE).exists() and not (target_dir / DUCKLAKE_SQLITE).exists():
+        reason = "No local catalog"
+    elif not (target_dir / META_JSON).exists():
+        reason = "Catalog not synced"
+    else:
+        from fdl.meta import is_stale, read_pushed_at, read_remote_pushed_at
+
+        local = read_pushed_at(target_dir / META_JSON)
+        remote = read_remote_pushed_at(resolved, target, datasource)
+        if is_stale(local, remote):
+            reason = "Remote is newer"
+        else:
+            return None
+
+    do_pull(resolved, target, target_dir, datasource)
+    return reason
 
 
 def pull_from_local(source_dir: Path, dist_dir: Path, datasource: str, *, target_name: str) -> bool:
