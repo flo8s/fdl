@@ -1,6 +1,5 @@
 """fdl CLI entry point."""
 
-import os
 import re
 from pathlib import Path
 
@@ -163,35 +162,9 @@ def push(
     force: bool = typer.Option(False, "--force", "-f", help="Override conflict detection"),
 ) -> None:
     """Push catalog to a target."""
-    from fdl import fdl_target_dir
-    from fdl.config import datasource_name
-    from fdl.ducklake import convert_sqlite_to_duckdb
-    from fdl.meta import PushConflictError
+    from fdl.push import do_push
 
-    dataset_dir = Path.cwd()
-    dist_dir = dataset_dir / fdl_target_dir(dest)
-    datasource = datasource_name(dataset_dir)
-
-    resolved = _resolve_target(dest)
-    console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
-    convert_sqlite_to_duckdb(dataset_dir, dest)
-
-    try:
-        if resolved.startswith("s3://"):
-            from fdl.config import target_s3_config
-            from fdl.push import push_to_s3
-            from fdl.s3 import create_s3_client
-
-            s3 = target_s3_config(dest)
-            client = create_s3_client(s3)
-            push_to_s3(client, s3.bucket, dist_dir, datasource, dataset_dir, force=force, target_name=dest)
-        else:
-            from fdl.push import push_to_local
-
-            push_to_local(Path(resolved), dist_dir, datasource, dataset_dir, force=force, target_name=dest)
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1)
+    do_push(dest, force=force)
 
 
 @app.command(
@@ -202,64 +175,74 @@ def run(ctx: typer.Context) -> None:
 
     \b
     Sets FDL_STORAGE, FDL_DATA_PATH, FDL_CATALOG, FDL_S3_*:
+      fdl run TARGET
       fdl run TARGET -- COMMAND [ARGS...]
     """
-    import subprocess
+    from fdl.run import run_command
 
-    from fdl.config import datasource_name, fdl_env_dict
+    target, cmd = _parse_command_args(ctx.args)
 
-    target, cmd = _parse_run_args(ctx.args)
+    raise SystemExit(run_command(target, cmd))
 
-    if not cmd:
+
+@app.command(
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False}
+)
+def sync(
+    ctx: typer.Context,
+    force: bool = typer.Option(False, "--force", "-f", help="Override conflict detection on push"),
+) -> None:
+    """Run pipeline and push in one step.
+
+    \b
+    Uses command from fdl.toml, or specify explicitly:
+      fdl sync TARGET
+      fdl sync TARGET -- COMMAND [ARGS...]
+    """
+    from fdl.run import run_command
+
+    target, cmd = _parse_command_args(ctx.args)
+
+    returncode = run_command(target, cmd)
+
+    if returncode != 0:
+        console.print(f"[yellow]Command exited with code {returncode}, skipping push[/yellow]")
+        raise SystemExit(returncode)
+
+    from fdl.push import do_push
+
+    do_push(target, force=force)
+
+
+def _parse_command_args(args: list[str]) -> tuple[str, list[str]]:
+    """Parse TARGET [-- COMMAND] from raw args, falling back to fdl.toml command."""
+    import shlex
+
+    if "--" in args:
+        idx = args.index("--")
+        before, cmd = args[:idx], args[idx + 1 :]
+        if len(before) != 1:
+            raise typer.BadParameter("Usage: fdl <command> TARGET [-- COMMAND]")
+        if not cmd:
+            raise typer.BadParameter("No command after --")
+        return before[0], cmd
+
+    # No -- separator: use command from fdl.toml
+    if len(args) != 1:
+        raise typer.BadParameter("Usage: fdl <command> TARGET [-- COMMAND]")
+    target = args[0]
+
+    from fdl.config import target_command
+
+    command_str = target_command(target)
+    if not command_str:
         raise typer.BadParameter(
-            "No command specified. Usage: fdl run TARGET -- COMMAND"
+            "No command specified and no command set in fdl.toml.\n"
+            "  Either use: fdl <command> TARGET -- COMMAND\n"
+            "  Or add to fdl.toml:\n"
+            '    command = "python main.py"'
         )
-
-    from fdl import fdl_target_dir
-
-    resolved = _resolve_target(target)
-    datasource = datasource_name()
-    storage_val = f"{resolved}/{datasource}"
-
-    target_dir = Path.cwd() / fdl_target_dir(target)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    # Auto-pull if local catalog is missing, unsynced, or stale
-    from fdl.pull import pull_if_needed
-
-    reason = pull_if_needed(target_dir, resolved, target, datasource)
-    if reason:
-        console.print(f"[dim]{reason}, pulled from {target}[/dim]")
-
-    # Ensure target catalog exists (initialize on first run)
-    from fdl.config import catalog_type, target_public_url
-    from fdl.ducklake import init_ducklake
-
-    pub = target_public_url(target) or "http://localhost:4001"
-    init_ducklake(target_dir, Path.cwd(), public_url=pub, sqlite=catalog_type() == "sqlite")
-
-    # Build env with all FDL_* values (won't override existing env vars)
-    env = os.environ.copy()
-    for key, value in fdl_env_dict(target_name=target, storage_override=storage_val).items():
-        if key not in env:
-            env[key] = value
-    env.setdefault("PYTHONUNBUFFERED", "1")
-
-    result = subprocess.run(cmd, env=env)
-    raise SystemExit(result.returncode)
-
-
-def _parse_run_args(args: list[str]) -> tuple[str, list[str]]:
-    """Parse TARGET -- COMMAND from raw args."""
-    if "--" not in args:
-        raise typer.BadParameter("Usage: fdl run TARGET -- COMMAND")
-
-    idx = args.index("--")
-    before, cmd = args[:idx], args[idx + 1 :]
-
-    if len(before) != 1:
-        raise typer.BadParameter("Usage: fdl run TARGET -- COMMAND")
-    return before[0], cmd
+    return target, shlex.split(command_str)
 
 
 @app.command("config")

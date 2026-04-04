@@ -1,7 +1,5 @@
 # CLI Reference
 
-fdl provides 7 commands for managing Frozen DuckLake catalogs.
-
 ## Commands
 
 | Command | Description |
@@ -9,6 +7,7 @@ fdl provides 7 commands for managing Frozen DuckLake catalogs.
 | [`init`](#init) | Initialize a new project |
 | [`pull`](#pull) | Download catalog from target |
 | [`push`](#push) | Upload catalog to target |
+| [`sync`](#sync) | Pull, run pipeline, and push in one step |
 | [`run`](#run) | Run a command with injected env vars |
 | [`sql`](#sql) | Execute SQL against the catalog |
 | [`config`](#config) | Get or set configuration |
@@ -80,20 +79,69 @@ Remote was pushed at 2026-04-01T00:00:00+00:00. Run 'fdl pull' first, or use --f
 
 Use `--force` to skip this check. The first push to a target with no `.fdl/meta.json` always succeeds.
 
+## sync
+
+Pull, run a pipeline command, and push — all in one step.
+
+```
+fdl sync TARGET [--force]
+fdl sync TARGET [--force] -- COMMAND [ARGS...]
+```
+
+| Argument / Option | Description |
+|---|---|
+| `TARGET` | Target name (e.g. `default`) |
+| `--force`, `-f` | Override conflict detection on push |
+| `COMMAND` | Command to execute (overrides `command` in fdl.toml) |
+
+When `COMMAND` is omitted, fdl reads `command` from `fdl.toml` — first from `targets.<name>.command`, then from the top-level `command`:
+
+```toml
+command = "python main.py"
+```
+
+Per-target override:
+
+```toml
+command = "python main.py"
+
+[targets.local]
+command = "python main.py --quick"
+```
+
+```bash
+# These are equivalent:
+fdl sync default
+fdl sync default -- python main.py
+```
+
+Processing:
+
+1. Auto-pull if local catalog is missing or stale (same as `fdl run`)
+2. Run command with FDL_* environment variables injected
+3. Push catalog to target (only on success)
+
+If the command exits with a non-zero code, push is skipped and the exit code is propagated.
+
+See [Working with Data](../guide/working-with-data.md#fdl-sync) for details on injected environment variables and usage patterns.
+
 ## run
 
 Run a command with fdl environment variables injected.
 
 ```
+fdl run TARGET
 fdl run TARGET -- COMMAND [ARGS...]
 ```
 
 | Argument | Description |
 |---|---|
 | `TARGET` | Target name (e.g. `default`) |
-| `COMMAND` | Command to execute |
+| `COMMAND` | Command to execute (overrides `command` in fdl.toml) |
 
-See [Working with Data](../guide/working-with-data.md#fdl-run) for details on injected environment variables and usage patterns.
+When `COMMAND` is omitted, uses `command` from fdl.toml (same lookup as `fdl sync`).
+
+See [Working with Data](../guide/working-with-data.md#injected-variables) for details on injected environment variables.
 
 ## sql
 

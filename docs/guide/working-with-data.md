@@ -1,21 +1,44 @@
 # Working with Data
 
-## fdl run
+## fdl sync
 
-`fdl run` executes a command with fdl environment variables injected. This lets pipeline tools (dbt, Python scripts, etc.) connect to the DuckLake catalog without manually setting up paths and credentials.
+`fdl sync` runs your pipeline and pushes the result to the target in one step.
 
 ```bash
-fdl run TARGET -- COMMAND [ARGS...]
+fdl sync TARGET
+fdl sync TARGET -- COMMAND [ARGS...]
 ```
 
 ```bash
-fdl run default -- dbt run
-fdl run default -- python pipeline.py
+fdl sync default                         # uses command from fdl.toml
+fdl sync default -- python main.py       # explicit command
 ```
 
-`fdl run` resolves the target URL, configures storage paths and S3 credentials, then injects them as environment variables into the subprocess. Your pipeline code doesn't need to know about fdl's config system — it just reads standard environment variables.
+Define the default command in `fdl.toml`:
+
+```toml
+command = "python main.py"
+```
+
+Per-target overrides are also supported (via `targets.<name>.command`).
+
+Processing:
+
+1. Auto-pull if local catalog is missing or stale
+2. Run command with FDL_* environment variables injected
+3. Push catalog to target (only on success)
+
+If the command exits with a non-zero code, push is skipped and the exit code is propagated.
+
+Options:
+
+| Option | Description |
+|---|---|
+| `--force`, `-f` | Override conflict detection on push |
 
 ### Injected variables
+
+The pipeline command receives these environment variables:
 
 | Variable | Description |
 |---|---|
@@ -49,15 +72,15 @@ FDL_S3_ENDPOINT_HOST=YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 
 ### Override behavior
 
-Existing environment variables are never overwritten. If `FDL_S3_ENDPOINT` is already set in your shell, `fdl run` will not replace it.
+Existing environment variables are never overwritten. If `FDL_S3_ENDPOINT` is already set in your shell, fdl will not replace it.
 
-This means in CI/CD, you can set variables explicitly and `fdl run` will respect them:
+This means in CI/CD, you can set variables explicitly and fdl will respect them:
 
 ```yaml
 env:
   FDL_S3_ENDPOINT: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 steps:
-  - run: fdl run default -- python pipeline.py
+  - run: fdl sync default
   # FDL_S3_ENDPOINT keeps the value set above
 ```
 

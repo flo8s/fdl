@@ -10,6 +10,42 @@ from fdl.config import PROJECT_CONFIG
 from fdl.console import console
 
 
+def do_push(target: str, *, force: bool = False) -> None:
+    """Push catalog to a target (S3 or local). Handles conflict detection."""
+    from fdl import fdl_target_dir
+    from fdl.config import datasource_name, resolve_target
+    from fdl.ducklake import convert_sqlite_to_duckdb
+    from fdl.meta import PushConflictError
+
+    dataset_dir = Path.cwd()
+    dist_dir = dataset_dir / fdl_target_dir(target)
+    datasource = datasource_name(dataset_dir)
+
+    resolved = resolve_target(target, dataset_dir)
+    console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
+    convert_sqlite_to_duckdb(dataset_dir, target)
+
+    try:
+        if resolved.startswith("s3://"):
+            from fdl.config import target_s3_config
+            from fdl.s3 import create_s3_client
+
+            s3 = target_s3_config(target)
+            client = create_s3_client(s3)
+            push_to_s3(
+                client, s3.bucket, dist_dir, datasource, dataset_dir,
+                force=force, target_name=target,
+            )
+        else:
+            push_to_local(
+                Path(resolved), dist_dir, datasource, dataset_dir,
+                force=force, target_name=target,
+            )
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1)
+
+
 def push_to_local(
     output_dir: Path, dist_dir: Path, datasource: str, project_dir: Path,
     *, force: bool = False, target_name: str,

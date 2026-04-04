@@ -336,3 +336,39 @@ def test_catalog_type_reads_sqlite(fdl_project_dir):
     set_value("name", "ds", path)
     set_value("catalog", "sqlite", path)
     assert catalog_type(fdl_project_dir) == "sqlite"
+
+
+# --- target_command ---
+
+
+def test_target_command_reads_top_level(fdl_project_dir):
+    """target_command returns top-level command from fdl.toml."""
+    from fdl.config import target_command
+
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("command", "python main.py", path)
+    set_value("targets.default.url", "/tmp/test", path)
+    assert target_command("default", fdl_project_dir) == "python main.py"
+
+
+def test_target_command_target_overrides_top_level(fdl_project_dir):
+    """targets.<name>.command takes precedence over top-level command."""
+    from fdl.config import target_command
+
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("command", "python main.py", path)
+    set_value("targets.default.url", "/tmp/test", path)
+    set_value("targets.default.command", "python custom.py", path)
+    assert target_command("default", fdl_project_dir) == "python custom.py"
+
+
+def test_target_command_returns_none_when_unset(fdl_project_dir):
+    """target_command returns None when neither target nor top-level command is set."""
+    from fdl.config import target_command
+
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("targets.default.url", "/tmp/test", path)
+    assert target_command("default", fdl_project_dir) is None

@@ -214,6 +214,20 @@ def target_public_url(name: str, project_dir: Path | None = None) -> str | None:
     return None
 
 
+def target_command(target_name: str, project_dir: Path | None = None) -> str | None:
+    """Pipeline command from fdl.toml. Checks targets.<name>.command, then top-level command."""
+    project_dir = project_dir or Path.cwd()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    # 1. targets.<name>.command
+    target = data.get("targets", {}).get(target_name)
+    if isinstance(target, dict):
+        cmd = target.get("command")
+        if cmd:
+            return cmd
+    # 2. Top-level command
+    return data.get("command")
+
+
 def ducklake_url(
     datasource: str, target_name: str, project_dir: Path | None = None
 ) -> str:

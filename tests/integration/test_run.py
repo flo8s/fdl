@@ -196,3 +196,24 @@ def test_run_auto_initializes_sqlite_catalog(fdl_project_dir: Path):
     assert catalog.endswith("ducklake.sqlite")
     assert Path(catalog).exists()
     assert "local" in catalog
+
+
+def test_run_reads_command_from_toml(fdl_project_dir: Path):
+    """fdl run TARGET (no --) reads command from fdl.toml."""
+    from fdl.config import set_value
+
+    storage = fdl_project_dir / "storage"
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(storage),
+        "--target-name", "default",
+    ])
+
+    marker = fdl_project_dir / "ran.txt"
+    set_value("command", f"sh -c 'echo ok > {marker}'")
+
+    result = cli.invoke(app, ["run", "default"])
+    assert result.exit_code == 0, result.output
+    assert marker.read_text().strip() == "ok"
