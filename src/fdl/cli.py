@@ -218,14 +218,23 @@ def run(ctx: typer.Context) -> None:
     from fdl import fdl_target_dir
 
     resolved = _resolve_target(target)
-    storage_val = f"{resolved}/{datasource_name()}"
+    datasource = datasource_name()
+    storage_val = f"{resolved}/{datasource}"
+
+    target_dir = Path.cwd() / fdl_target_dir(target)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Auto-pull if local catalog is missing, unsynced, or stale
+    from fdl.pull import pull_if_needed
+
+    reason = pull_if_needed(target_dir, resolved, target, datasource)
+    if reason:
+        console.print(f"[dim]{reason}, pulled from {target}[/dim]")
 
     # Ensure target catalog exists (initialize on first run)
     from fdl.config import catalog_type, target_public_url
     from fdl.ducklake import init_ducklake
 
-    target_dir = Path.cwd() / fdl_target_dir(target)
-    target_dir.mkdir(parents=True, exist_ok=True)
     pub = target_public_url(target) or "http://localhost:4001"
     init_ducklake(target_dir, Path.cwd(), public_url=pub, sqlite=catalog_type() == "sqlite")
 
