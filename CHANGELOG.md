@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-04-04)
+
+### Features
+
+- Add fdl sync command
+  ([`777528c`](https://github.com/flo8s/fdl/commit/777528c0579b19306e067fb6a6bc1e6105504325))
+
+Combines run and push into a single command to prevent forgetting to push after running a pipeline.
+
+Both fdl run and fdl sync read command from fdl.toml when no explicit -- COMMAND is given. Lookup
+  order: targets.<name>.command → top-level command.
+
+- **run**: Auto-pull catalog before command execution
+  ([`4045f61`](https://github.com/flo8s/fdl/commit/4045f615941156d996cdf631b279ecf0680f013f))
+
+fdl run でコマンド実行前にカタログの同期状態を確認し、 必要に応じて自動的に pull する。
+
+判定条件: - ローカルカタログが存在しない - meta.json がない (pull/push されたことがない) - リモートの方が新しい (pushed_at 比較)
+
+### Refactoring
+
+- **pull**: Extract do_pull/pull_if_needed and add --force flag
+  ([`128d063`](https://github.com/flo8s/fdl/commit/128d06349d980ddf26a98bddc8015848c738c564))
+
+pull コマンドのS3/ローカル分岐ロジックを do_pull() に抽出し、 同期判定ロジックを pull_if_needed() に切り出した。
+
+pull はデフォルトで最新の場合スキップし、--force で強制再ダウンロード。
+
+
 ## v0.5.7 (2026-04-02)
 
 ### Bug Fixes
