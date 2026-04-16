@@ -6,7 +6,6 @@ from pathlib import Path
 import typer
 from typer.main import Typer
 
-from fdl import FDL_DIR  # noqa: F401
 from fdl.console import console
 
 app = typer.Typer(pretty_exceptions_short=True, invoke_without_command=True)
@@ -74,8 +73,6 @@ def init(
     ),
 ) -> None:
     """Initialize a new fdl project."""
-    import shutil
-
     import fdl
     from fdl.config import PROJECT_CONFIG
 
@@ -90,8 +87,7 @@ def init(
         default_name = _sanitize_name(dataset_dir.resolve().name)
         name = typer.prompt("Datasource name", default=default_name)
 
-    config_path = dataset_dir / PROJECT_CONFIG
-    if config_path.exists():
+    if (dataset_dir / PROJECT_CONFIG).exists():
         raise typer.BadParameter(f"{PROJECT_CONFIG} already exists")
 
     # Prompt for target config if not provided via flags
@@ -102,26 +98,14 @@ def init(
     if target_url is None:
         target_url = typer.prompt("Target URL", default=fdl.default_target_url())
 
-    dist_dir = dataset_dir / fdl.fdl_target_dir(target_name)
-    try:
-        fdl.init(
-            name,
-            target_name=target_name,
-            target_url=target_url,
-            public_url=public_url,
-            sqlite=sqlite,
-            project_dir=dataset_dir,
-        )
-    except Exception:
-        # Rollback: remove partially created files
-        if config_path.exists():
-            config_path.unlink()
-        if dist_dir.exists():
-            shutil.rmtree(dist_dir)
-        fdl_dir = dataset_dir / FDL_DIR
-        if fdl_dir.exists() and not any(fdl_dir.iterdir()):
-            fdl_dir.rmdir()
-        raise
+    fdl.init(
+        name,
+        target_name=target_name,
+        target_url=target_url,
+        public_url=public_url,
+        sqlite=sqlite,
+        project_dir=dataset_dir,
+    )
 
     console.print(f"[green]Initialized fdl project: {name}[/green]")
 
@@ -151,9 +135,13 @@ def push(
 ) -> None:
     """Push catalog to a target."""
     import fdl
+    from fdl.meta import PushConflictError
 
     try:
         fdl.push(dest, force=force)
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
     except ValueError as e:
         raise typer.BadParameter(str(e)) from None
 
@@ -195,10 +183,14 @@ def sync(
       fdl sync TARGET -- COMMAND [ARGS...]
     """
     import fdl
+    from fdl.meta import PushConflictError
 
     target, cmd = _parse_command_args(ctx.args)
     try:
         raise SystemExit(fdl.sync(target, cmd, force=force))
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
     except ValueError as e:
         raise typer.BadParameter(_command_missing_hint(str(e))) from None
 

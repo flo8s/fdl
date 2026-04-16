@@ -16,11 +16,15 @@ def do_push(
     force: bool = False,
     project_dir: Path | None = None,
 ) -> None:
-    """Push catalog to a target (S3 or local). Handles conflict detection."""
+    """Push catalog to a target (S3 or local).
+
+    Raises:
+        fdl.meta.PushConflictError: When the remote has been updated since
+            the last pull (unless ``force=True``).
+    """
     from fdl import fdl_target_dir
     from fdl.config import datasource_name, find_project_dir, resolve_target
     from fdl.ducklake import convert_sqlite_to_duckdb
-    from fdl.meta import PushConflictError
 
     dataset_dir = project_dir or find_project_dir()
     dist_dir = dataset_dir / fdl_target_dir(target)
@@ -30,25 +34,21 @@ def do_push(
     console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
     convert_sqlite_to_duckdb(dataset_dir, target)
 
-    try:
-        if resolved.startswith("s3://"):
-            from fdl.config import target_s3_config
-            from fdl.s3 import create_s3_client
+    if resolved.startswith("s3://"):
+        from fdl.config import target_s3_config
+        from fdl.s3 import create_s3_client
 
-            s3 = target_s3_config(target, dataset_dir)
-            client = create_s3_client(s3)
-            push_to_s3(
-                client, s3.bucket, dist_dir, datasource, dataset_dir,
-                force=force, target_name=target,
-            )
-        else:
-            push_to_local(
-                Path(resolved), dist_dir, datasource, dataset_dir,
-                force=force, target_name=target,
-            )
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1)
+        s3 = target_s3_config(target, dataset_dir)
+        client = create_s3_client(s3)
+        push_to_s3(
+            client, s3.bucket, dist_dir, datasource, dataset_dir,
+            force=force, target_name=target,
+        )
+    else:
+        push_to_local(
+            Path(resolved), dist_dir, datasource, dataset_dir,
+            force=force, target_name=target,
+        )
 
 
 def push_to_local(

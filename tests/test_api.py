@@ -166,6 +166,54 @@ def test_init_rejects_existing_config(
         fdl.init("mydata", project_dir=fdl_project_dir)
 
 
+def test_push_raises_push_conflict_error(
+    fdl_project_dir: Path, tmp_path_factory
+) -> None:
+    """fdl.push raises PushConflictError instead of SystemExit on conflict."""
+    from fdl.meta import PushConflictError
+
+    remote = tmp_path_factory.mktemp("remote")
+    _init_local_project(fdl_project_dir, remote=remote)
+
+    with fdl.connect("default") as conn:
+        conn.execute("CREATE TABLE t (x INTEGER)")
+    fdl.push("default")
+
+    # Someone else pushes a newer meta.json to the remote
+    import json
+    from fdl import FDL_DIR, META_JSON
+
+    remote_meta = remote / "mydata" / FDL_DIR / META_JSON
+    remote_meta.write_text(json.dumps({"pushed_at": "2099-01-01T00:00:00+00:00"}))
+
+    with pytest.raises(PushConflictError):
+        fdl.push("default")
+
+
+def test_init_rollback_on_failure(
+    fdl_project_dir: Path, monkeypatch, tmp_path_factory
+) -> None:
+    """fdl.init rolls back fdl.toml and .fdl/ when init_ducklake fails."""
+    from fdl import FDL_DIR
+    from fdl.config import PROJECT_CONFIG
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr("fdl.ducklake.init_ducklake", _boom)
+
+    remote = tmp_path_factory.mktemp("remote")
+    with pytest.raises(RuntimeError, match="simulated"):
+        fdl.init(
+            "mydata",
+            target_url=str(remote),
+            project_dir=fdl_project_dir,
+        )
+
+    assert not (fdl_project_dir / PROJECT_CONFIG).exists()
+    assert not (fdl_project_dir / FDL_DIR / "default").exists()
+
+
 def test_public_api_surface() -> None:
     """__all__ exposes exactly the documented public names."""
     expected = {

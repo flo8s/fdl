@@ -84,6 +84,7 @@ def init(
     """Initialize an fdl project (CLI: ``fdl init``).
 
     Writes ``fdl.toml`` and creates ``.fdl/{target_name}/ducklake.duckdb``.
+    On failure, partially created ``fdl.toml`` / ``.fdl/`` are rolled back.
 
     Args:
         name: Datasource name. Must be a valid SQL identifier.
@@ -99,6 +100,7 @@ def init(
         FileExistsError: If ``fdl.toml`` already exists in the project.
     """
     import re
+    import shutil
 
     from fdl.config import PROJECT_CONFIG, set_value
     from fdl.ducklake import init_ducklake
@@ -121,11 +123,21 @@ def init(
         target_url = default_target_url()
 
     dist_dir = root / fdl_target_dir(target_name)
-    set_value("name", name, config_path)
-    set_value("catalog", "sqlite" if sqlite else "duckdb", config_path)
-    set_value(f"targets.{target_name}.url", target_url, config_path)
-    set_value(f"targets.{target_name}.public_url", public_url, config_path)
-    init_ducklake(dist_dir, root, public_url=public_url, sqlite=sqlite)
+    try:
+        set_value("name", name, config_path)
+        set_value("catalog", "sqlite" if sqlite else "duckdb", config_path)
+        set_value(f"targets.{target_name}.url", target_url, config_path)
+        set_value(f"targets.{target_name}.public_url", public_url, config_path)
+        init_ducklake(dist_dir, root, public_url=public_url, sqlite=sqlite)
+    except Exception:
+        if config_path.exists():
+            config_path.unlink()
+        if dist_dir.exists():
+            shutil.rmtree(dist_dir)
+        fdl_dir = root / FDL_DIR
+        if fdl_dir.exists() and not any(fdl_dir.iterdir()):
+            fdl_dir.rmdir()
+        raise
 
 
 def pull(
@@ -141,6 +153,10 @@ def pull(
         force: Re-download even if local catalog is up to date.
         project_dir: Project directory containing fdl.toml. Defaults to the
             nearest ancestor that contains one.
+
+    Raises:
+        FileNotFoundError: If ``fdl.toml`` cannot be located.
+        ValueError: If ``target`` is not defined in ``fdl.toml``.
     """
     from fdl.config import datasource_name, find_project_dir, resolve_target
     from fdl.console import console
@@ -176,6 +192,8 @@ def push(
             nearest ancestor that contains one.
 
     Raises:
+        FileNotFoundError: If ``fdl.toml`` cannot be located.
+        ValueError: If ``target`` is not defined in ``fdl.toml``.
         fdl.meta.PushConflictError: When the remote has been updated since
             the last pull (only when ``force=False``).
     """
@@ -192,7 +210,8 @@ def run(
 
     Auto-pulls the catalog if stale, sets ``FDL_STORAGE`` / ``FDL_DATA_PATH``
     / ``FDL_CATALOG`` / ``FDL_S3_*`` in the subprocess environment, and runs
-    ``command`` with the project directory as its working directory.
+    ``command`` with ``project_dir`` as its working directory (so relative
+    paths resolve against the project root, not the caller's cwd).
 
     Args:
         target: Target name defined in fdl.toml.
@@ -204,6 +223,11 @@ def run(
 
     Returns:
         The subprocess exit code.
+
+    Raises:
+        FileNotFoundError: If ``fdl.toml`` cannot be located.
+        ValueError: If ``target`` is not defined in ``fdl.toml``, or if
+            ``command`` is ``None`` and no ``command`` is set in ``fdl.toml``.
     """
     import shlex
 
@@ -229,6 +253,9 @@ def sync(
 ) -> int:
     """Run command then push in one step (CLI: ``fdl sync``).
 
+    When the command exits non-zero, push is skipped and the exit code is
+    returned as-is.
+
     Args:
         target: Target name defined in fdl.toml.
         command: Command to run. When ``None``, reads the ``command`` field
@@ -238,8 +265,14 @@ def sync(
             nearest ancestor that contains one.
 
     Returns:
-        The subprocess exit code. Does not push if the command exits with a
-        non-zero status.
+        The subprocess exit code (``0`` if both run and push succeeded).
+
+    Raises:
+        FileNotFoundError: If ``fdl.toml`` cannot be located.
+        ValueError: If ``target`` is not defined in ``fdl.toml``, or if
+            ``command`` is ``None`` and no ``command`` is set in ``fdl.toml``.
+        fdl.meta.PushConflictError: When the remote has been updated since
+            the last pull (only when ``force=False``).
     """
     from fdl.console import console
 
@@ -275,6 +308,11 @@ def connect(
 
     Yields:
         A DuckDB connection with the DuckLake catalog attached.
+
+    Raises:
+        FileNotFoundError: If ``fdl.toml`` or the local catalog file cannot
+            be located. Run ``fdl.init`` or ``fdl.pull`` first.
+        ValueError: If ``target`` is not defined in ``fdl.toml``.
     """
     from fdl.config import datasource_name, find_project_dir, resolve_target
     from fdl.ducklake import connect as _connect

@@ -145,6 +145,11 @@ fdl run TARGET -- COMMAND [ARGS...]
 
 When `COMMAND` is omitted, uses `command` from fdl.toml (same lookup as `fdl sync`).
 
+The subprocess runs with the project root (the directory containing
+`fdl.toml`) as its working directory. Relative paths in your pipeline
+script resolve against the project root regardless of where `fdl run` was
+invoked from.
+
 See [Working with Data](../guide/working-with-data.md#injected-variables) for details on injected environment variables.
 
 ## sql
