@@ -143,16 +143,22 @@ def pull(
             nearest ancestor that contains one.
     """
     from fdl.config import datasource_name, find_project_dir, resolve_target
+    from fdl.console import console
 
     root = project_dir or find_project_dir()
     dist_dir = root / fdl_target_dir(target)
     datasource = datasource_name(root)
     resolved = resolve_target(target, root)
+    console.print(f"[bold]--- pull: {datasource} ← {resolved} ---[/bold]")
 
     if force:
         _do_pull(resolved, target, dist_dir, datasource, root)
     else:
-        _pull_if_needed(dist_dir, resolved, target, datasource, root)
+        reason = _pull_if_needed(dist_dir, resolved, target, datasource, root)
+        if reason:
+            console.print(f"  {reason}")
+        else:
+            console.print("  Already up to date")
 
 
 def push(
@@ -235,8 +241,13 @@ def sync(
         The subprocess exit code. Does not push if the command exits with a
         non-zero status.
     """
+    from fdl.console import console
+
     returncode = run(target, command, project_dir=project_dir)
     if returncode != 0:
+        console.print(
+            f"[yellow]Command exited with code {returncode}, skipping push[/yellow]"
+        )
         return returncode
     push(target, force=force, project_dir=project_dir)
     return 0

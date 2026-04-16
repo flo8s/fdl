@@ -25,7 +25,7 @@ def _resolve_target(name: str) -> str:
     from fdl.config import resolve_target
 
     try:
-        return resolve_target(name, Path.cwd())
+        return resolve_target(name)
     except ValueError as e:
         raise typer.BadParameter(str(e)) from None
 
@@ -76,9 +76,8 @@ def init(
     """Initialize a new fdl project."""
     import shutil
 
-    from fdl import default_target_url
-    from fdl.config import PROJECT_CONFIG, set_value
-    from fdl.ducklake import init_ducklake
+    import fdl
+    from fdl.config import PROJECT_CONFIG
 
     dataset_dir = Path.cwd()
     if name:
@@ -90,8 +89,8 @@ def init(
     else:
         default_name = _sanitize_name(dataset_dir.resolve().name)
         name = typer.prompt("Datasource name", default=default_name)
-    config_path = dataset_dir / PROJECT_CONFIG
 
+    config_path = dataset_dir / PROJECT_CONFIG
     if config_path.exists():
         raise typer.BadParameter(f"{PROJECT_CONFIG} already exists")
 
@@ -101,21 +100,18 @@ def init(
     if public_url is None:
         public_url = typer.prompt("Public URL", default="http://localhost:4001")
     if target_url is None:
-        target_url = typer.prompt("Target URL", default=default_target_url())
+        target_url = typer.prompt("Target URL", default=fdl.default_target_url())
 
-    from fdl import fdl_target_dir
-
-    dist_dir = dataset_dir / fdl_target_dir(target_name)
+    dist_dir = dataset_dir / fdl.fdl_target_dir(target_name)
     try:
-        # fdl.toml
-        set_value("name", name, config_path)
-        set_value("catalog", "sqlite" if sqlite else "duckdb", config_path)
-        set_value(f"targets.{target_name}.url", target_url, config_path)
-        set_value(f"targets.{target_name}.public_url", public_url, config_path)
-
-        # .fdl/{target}/ + DuckLake catalog
-        init_ducklake(dist_dir, dataset_dir, public_url=public_url, sqlite=sqlite)
-
+        fdl.init(
+            name,
+            target_name=target_name,
+            target_url=target_url,
+            public_url=public_url,
+            sqlite=sqlite,
+            project_dir=dataset_dir,
+        )
     except Exception:
         # Rollback: remove partially created files
         if config_path.exists():
@@ -133,38 +129,33 @@ def init(
 @app.command()
 def pull(
     source: str = typer.Argument(..., help="Target name (e.g. default)"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force re-download even if up to date"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force re-download even if up to date"
+    ),
 ) -> None:
     """Pull DuckLake catalog from a target."""
-    from fdl import fdl_target_dir
-    from fdl.config import datasource_name
-    from fdl.pull import do_pull, pull_if_needed
+    import fdl
 
-    dataset_dir = Path.cwd()
-    dist_dir = dataset_dir / fdl_target_dir(source)
-    datasource = datasource_name(dataset_dir)
-    resolved = _resolve_target(source)
-    console.print(f"[bold]--- pull: {datasource} ← {resolved} ---[/bold]")
-
-    if force:
-        do_pull(resolved, source, dist_dir, datasource)
-    else:
-        reason = pull_if_needed(dist_dir, resolved, source, datasource)
-        if reason:
-            console.print(f"  {reason}")
-        else:
-            console.print("  Already up to date")
+    try:
+        fdl.pull(source, force=force)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from None
 
 
 @app.command()
 def push(
     dest: str = typer.Argument(..., help="Target name (e.g. default)"),
-    force: bool = typer.Option(False, "--force", "-f", help="Override conflict detection"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Override conflict detection"
+    ),
 ) -> None:
     """Push catalog to a target."""
-    from fdl.push import do_push
+    import fdl
 
-    do_push(dest, force=force)
+    try:
+        fdl.push(dest, force=force)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from None
 
 
 @app.command(
@@ -178,11 +169,13 @@ def run(ctx: typer.Context) -> None:
       fdl run TARGET
       fdl run TARGET -- COMMAND [ARGS...]
     """
-    from fdl.run import run_command
+    import fdl
 
     target, cmd = _parse_command_args(ctx.args)
-
-    raise SystemExit(run_command(target, cmd))
+    try:
+        raise SystemExit(fdl.run(target, cmd))
+    except ValueError as e:
+        raise typer.BadParameter(_command_missing_hint(str(e))) from None
 
 
 @app.command(
@@ -190,7 +183,9 @@ def run(ctx: typer.Context) -> None:
 )
 def sync(
     ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", "-f", help="Override conflict detection on push"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Override conflict detection on push"
+    ),
 ) -> None:
     """Run pipeline and push in one step.
 
@@ -199,25 +194,31 @@ def sync(
       fdl sync TARGET
       fdl sync TARGET -- COMMAND [ARGS...]
     """
-    from fdl.run import run_command
+    import fdl
 
     target, cmd = _parse_command_args(ctx.args)
-
-    returncode = run_command(target, cmd)
-
-    if returncode != 0:
-        console.print(f"[yellow]Command exited with code {returncode}, skipping push[/yellow]")
-        raise SystemExit(returncode)
-
-    from fdl.push import do_push
-
-    do_push(target, force=force)
+    try:
+        raise SystemExit(fdl.sync(target, cmd, force=force))
+    except ValueError as e:
+        raise typer.BadParameter(_command_missing_hint(str(e))) from None
 
 
-def _parse_command_args(args: list[str]) -> tuple[str, list[str]]:
-    """Parse TARGET [-- COMMAND] from raw args, falling back to fdl.toml command."""
-    import shlex
+def _command_missing_hint(msg: str) -> str:
+    """Add CLI-specific usage hint to a 'no command' error."""
+    return (
+        f"{msg}\n"
+        "  Either use: fdl <command> TARGET -- COMMAND\n"
+        "  Or add to fdl.toml:\n"
+        '    command = "python main.py"'
+    )
 
+
+def _parse_command_args(args: list[str]) -> tuple[str, list[str] | None]:
+    """Parse TARGET [-- COMMAND] from raw args.
+
+    When no ``--`` separator is given, returns (target, None) so the API
+    falls back to the ``command`` field in fdl.toml.
+    """
     if "--" in args:
         idx = args.index("--")
         before, cmd = args[:idx], args[idx + 1 :]
@@ -227,22 +228,9 @@ def _parse_command_args(args: list[str]) -> tuple[str, list[str]]:
             raise typer.BadParameter("No command after --")
         return before[0], cmd
 
-    # No -- separator: use command from fdl.toml
     if len(args) != 1:
         raise typer.BadParameter("Usage: fdl <command> TARGET [-- COMMAND]")
-    target = args[0]
-
-    from fdl.config import target_command
-
-    command_str = target_command(target)
-    if not command_str:
-        raise typer.BadParameter(
-            "No command specified and no command set in fdl.toml.\n"
-            "  Either use: fdl <command> TARGET -- COMMAND\n"
-            "  Or add to fdl.toml:\n"
-            '    command = "python main.py"'
-        )
-    return target, shlex.split(command_str)
+    return args[0], None
 
 
 @app.command("config")
@@ -252,8 +240,8 @@ def config_cmd(
 ) -> None:
     """Get or set fdl configuration (reads/writes fdl.toml)."""
     from fdl.config import (
-        get_all,
         _load_toml,
+        get_all,
         project_config_path,
         set_value,
     )
@@ -291,8 +279,8 @@ def sql(
     ),
 ) -> None:
     """Execute a SQL query against the DuckLake catalog."""
-    from fdl.config import datasource_name
-    from fdl.ducklake import connect
+    import fdl
+    from fdl.config import datasource_name, resolve_target
     from fdl.meta import PushConflictError, check_conflict, read_remote_pushed_at
 
     resolved = _resolve_target(target)
@@ -300,16 +288,14 @@ def sql(
 
     try:
         check_conflict(
-            read_remote_pushed_at(resolved, target, datasource), force=force, target_name=target,
+            read_remote_pushed_at(resolved, target, datasource),
+            force=force, target_name=target,
         )
     except PushConflictError as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1)
 
-    storage_val = f"{resolved}/{datasource}"
-
-    with connect(storage=storage_val, target_name=target) as conn:
-        conn.execute(f"USE {datasource}")
+    with fdl.connect(target) as conn:
         conn.execute(query)
         if not conn.description:
             return
