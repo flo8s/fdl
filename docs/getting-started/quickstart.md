@@ -123,8 +123,30 @@ Once deployed, anyone can query directly from the public URL:
 duckdb -c "ATTACH 'ducklake:https://your-public-url.com/my_dataset/ducklake.duckdb' AS my_dataset"
 ```
 
+## From Python
+
+The same operations are available as a Python API, useful for pipelines and
+orchestrators (e.g. Dagster):
+
+```python
+import fdl
+
+with fdl.connect("default") as conn:
+    conn.execute(
+        "CREATE TABLE world_cities (name VARCHAR, country VARCHAR, population INTEGER)"
+    )
+    conn.execute("INSERT INTO world_cities VALUES ('Tokyo', 'Japan', 14000000)")
+
+fdl.push("default")
+```
+
+See the [Python API Reference](../reference/python-api.md) for all entry
+points.
+
 ## Next steps
 
 - [Working with Data](../guide/working-with-data.md) — How to read and write data in your catalog
 - [Configuration](../guide/configuration.md) — Targets, credentials, config layers
 - [CLI Reference](../reference/cli.md) — All available commands
+- [Python API Reference](../reference/python-api.md) — Call fdl from Python
+- [Dagster integration](../integrations/dagster.md) — Drive fdl from Dagster assets

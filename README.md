@@ -38,6 +38,7 @@ duckdb -c "ATTACH 'ducklake:http://localhost:4001/my_dataset/ducklake.duckdb' AS
 - sql — Query and modify data directly from the command line
 - run — Execute any command (dbt, dlt, Python) with auto-injected storage credentials
 - serve — Built-in HTTP server with CORS and Range request support
+- Python API — Call the same operations in-process from Dagster, Airflow, etc.
 - Works with S3-compatible storage (AWS S3, Cloudflare R2, GCS, etc) and local directories
 
 ## Install

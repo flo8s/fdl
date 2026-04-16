@@ -1,5 +1,9 @@
 # CLI Reference
 
+All commands (except `init`) discover `fdl.toml` by walking up from the
+current working directory, so they can be run from any subdirectory of your
+project. The same lookup is also used by the [Python API](python-api.md).
+
 ## Commands
 
 | Command | Description |
@@ -140,6 +144,11 @@ fdl run TARGET -- COMMAND [ARGS...]
 | `COMMAND` | Command to execute (overrides `command` in fdl.toml) |
 
 When `COMMAND` is omitted, uses `command` from fdl.toml (same lookup as `fdl sync`).
+
+The subprocess runs with the project root (the directory containing
+`fdl.toml`) as its working directory. Relative paths in your pipeline
+script resolve against the project root regardless of where `fdl run` was
+invoked from.
 
 See [Working with Data](../guide/working-with-data.md#injected-variables) for details on injected environment variables.
 

@@ -13,9 +13,29 @@ if TYPE_CHECKING:
 PROJECT_CONFIG = "fdl.toml"
 
 
-def project_config_path() -> Path:
-    """Project config (fdl.toml)."""
-    return Path.cwd() / PROJECT_CONFIG
+def find_project_dir(start: Path | None = None) -> Path:
+    """Find the nearest ancestor directory that contains fdl.toml."""
+    current = (start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / PROJECT_CONFIG).is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"{PROJECT_CONFIG} not found in {current} or any parent directory"
+    )
+
+
+def project_config_path(project_dir: Path | None = None) -> Path:
+    """Project config (fdl.toml).
+
+    Searches from cwd up the directory tree. If not found anywhere,
+    falls back to ``Path.cwd() / fdl.toml`` (used by ``fdl init``).
+    """
+    if project_dir is not None:
+        return project_dir / PROJECT_CONFIG
+    try:
+        return find_project_dir() / PROJECT_CONFIG
+    except FileNotFoundError:
+        return Path.cwd() / PROJECT_CONFIG
 
 
 def _load_toml(path: Path) -> dict:
@@ -77,7 +97,7 @@ def _flatten(data: dict, prefix: str = "") -> dict[str, str]:
 
 def datasource_name(project_dir: Path | None = None) -> str:
     """Datasource name from fdl.toml."""
-    project_dir = project_dir or Path.cwd()
+    project_dir = project_dir or find_project_dir()
     data = _load_toml(project_dir / PROJECT_CONFIG)
     name = data.get("name")
     if not name:
@@ -89,7 +109,7 @@ def datasource_name(project_dir: Path | None = None) -> str:
 
 def catalog_type(project_dir: Path | None = None) -> str:
     """Catalog type from fdl.toml ('duckdb' or 'sqlite')."""
-    project_dir = project_dir or Path.cwd()
+    project_dir = project_dir or find_project_dir()
     data = _load_toml(project_dir / PROJECT_CONFIG)
     return data.get("catalog", "duckdb")
 
@@ -111,13 +131,17 @@ def data_path(target_name: str | None = None) -> str:
     )
 
 
-def catalog_path(target_name: str | None = None) -> str:
+def catalog_path(
+    target_name: str | None = None,
+    project_dir: Path | None = None,
+) -> str:
     """FDL_CATALOG: path to the DuckLake catalog file (auto-detect sqlite/duckdb)."""
     if v := os.environ.get("FDL_CATALOG"):
         return v
     from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, fdl_target_dir
 
-    base = fdl_target_dir(target_name) if target_name else FDL_DIR
+    rel = fdl_target_dir(target_name) if target_name else FDL_DIR
+    base = (project_dir / rel) if project_dir else rel
     sqlite = base / DUCKLAKE_SQLITE
     if sqlite.exists():
         return str(sqlite)
@@ -125,14 +149,14 @@ def catalog_path(target_name: str | None = None) -> str:
     if duckdb.exists():
         return str(duckdb)
     # Neither exists: fall back to catalog type from fdl.toml
-    if catalog_type() == "sqlite":
+    if catalog_type(project_dir) == "sqlite":
         return str(sqlite)
     return str(duckdb)
 
 
 def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":
     """Get S3 config for a target from fdl.toml (with ${VAR} expansion)."""
-    project_dir = project_dir or Path.cwd()
+    project_dir = project_dir or find_project_dir()
 
     # Resolve bucket from target URL
     url = resolve_target(name, project_dir)
@@ -154,7 +178,10 @@ def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":
 
 
 def fdl_env_dict(
-    *, target_name: str | None = None, storage_override: str | None = None
+    *,
+    target_name: str | None = None,
+    storage_override: str | None = None,
+    project_dir: Path | None = None,
 ) -> dict[str, str]:
     """All FDL_* settings as env var dict (for fdl run subprocess)."""
     from fdl import DUCKLAKE_FILE, ducklake_data_path
@@ -163,11 +190,11 @@ def fdl_env_dict(
     result = {
         "FDL_STORAGE": storage_val,
         "FDL_DATA_PATH": ducklake_data_path(f"{storage_val}/{DUCKLAKE_FILE}"),
-        "FDL_CATALOG": catalog_path(target_name),
+        "FDL_CATALOG": catalog_path(target_name, project_dir),
     }
     if target_name:
         try:
-            s3 = target_s3_config(target_name)
+            s3 = target_s3_config(target_name, project_dir)
             if s3.endpoint:
                 result["FDL_S3_ENDPOINT"] = s3.endpoint
                 result["FDL_S3_ENDPOINT_HOST"] = s3.endpoint_host
@@ -180,7 +207,7 @@ def fdl_env_dict(
     return result
 
 
-def resolve_target(name: str, project_dir: Path) -> str:
+def resolve_target(name: str, project_dir: Path | None = None) -> str:
     """Resolve a target name to a concrete URL or path from fdl.toml."""
     # Reject direct URLs/paths with helpful hint
     if name.startswith("s3://") or name.startswith("/") or name.startswith("."):
@@ -189,6 +216,7 @@ def resolve_target(name: str, project_dir: Path) -> str:
             f'  fdl config targets.{name.split("/")[0]}.url "{name}"'
         )
 
+    project_dir = project_dir or find_project_dir()
     data = _load_toml(project_dir / PROJECT_CONFIG)
     target = data.get("targets", {}).get(name)
     if isinstance(target, dict):
@@ -204,7 +232,7 @@ def resolve_target(name: str, project_dir: Path) -> str:
 
 def target_public_url(name: str, project_dir: Path | None = None) -> str | None:
     """Get the public_url for a target from fdl.toml."""
-    project_dir = project_dir or Path.cwd()
+    project_dir = project_dir or find_project_dir()
     data = _load_toml(project_dir / PROJECT_CONFIG)
     target = data.get("targets", {}).get(name)
     if isinstance(target, dict):
@@ -216,7 +244,7 @@ def target_public_url(name: str, project_dir: Path | None = None) -> str | None:
 
 def target_command(target_name: str, project_dir: Path | None = None) -> str | None:
     """Pipeline command from fdl.toml. Checks targets.<name>.command, then top-level command."""
-    project_dir = project_dir or Path.cwd()
+    project_dir = project_dir or find_project_dir()
     data = _load_toml(project_dir / PROJECT_CONFIG)
     # 1. targets.<name>.command
     target = data.get("targets", {}).get(target_name)
@@ -234,7 +262,7 @@ def ducklake_url(
     """Public DuckLake catalog URL for a datasource, resolved from a target's public_url."""
     from fdl import DUCKLAKE_FILE
 
-    pub = target_public_url(target_name, project_dir or Path.cwd())
+    pub = target_public_url(target_name, project_dir)
     if not pub:
         raise KeyError(
             f"public_url not configured for target '{target_name}'.\n"
