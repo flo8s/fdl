@@ -1,6 +1,96 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-04-16)
+
+### Bug Fixes
+
+- **api**: Propagate push conflicts, move init rollback into API
+  ([`c0206a3`](https://github.com/flo8s/fdl/commit/c0206a369e7d466b2763e800a6bb66c4e99e4cf1))
+
+- fdl.push now raises PushConflictError instead of calling SystemExit, so Dagster/CI code can catch
+  it. CLI wraps push/sync in try/except and translates to SystemExit(1). - fdl.init rolls back
+  fdl.toml and the partially created .fdl/ directory itself when init_ducklake fails. CLI no longer
+  needs its own rollback block. - Unified Raises sections across fdl.pull, fdl.push, fdl.run,
+  fdl.sync, and fdl.connect docstrings. - Documented that fdl run / fdl sync execute the subprocess
+  with the project root as cwd (was implicit in the feat/python-api series).
+
+BREAKING CHANGE: fdl run (and fdl sync) now run the pipeline subprocess with the directory
+  containing fdl.toml as its working directory, rather than the caller's cwd. Pipelines that relied
+  on the caller's cwd for relative paths should adjust.
+
+### Chores
+
+- Sync uv.lock with pyproject version bump
+  ([`68868c7`](https://github.com/flo8s/fdl/commit/68868c759a91761f7ecad6a423478786f38fcdd3))
+
+### Documentation
+
+- Document the Python API and Dagster integration
+  ([`7b65815`](https://github.com/flo8s/fdl/commit/7b65815ca0107248d12bc05e07ec2b5611823066))
+
+Add docs/reference/python-api.md (mkdocstrings-rendered reference for the six entry points) and
+  docs/integrations/dagster.md (asset, ConfigurableResource, and run-script patterns). Mention the
+  Python API in the home page, quickstart, README, and CLI reference, and note the fdl.toml walk-up
+  lookup and fdl.init's non-idempotent behavior where relevant.
+
+### Features
+
+- Add Python API mirroring CLI commands
+  ([`ac70ff0`](https://github.com/flo8s/fdl/commit/ac70ff0fce3fdc07af2d24bba325dd545d194368))
+
+Expose fdl.init, fdl.pull, fdl.push, fdl.run, fdl.sync, and fdl.connect at the top of the fdl
+  package so pipelines (e.g. Dagster assets) can drive DuckLake catalogs without spawning a CLI
+  subprocess. Each function mirrors its CLI counterpart and accepts an optional project_dir keyword
+  that falls back to find_project_dir() when omitted. __all__ is set so IDE completion and strict
+  re-export checkers treat these six names as the public surface.
+
+### Refactoring
+
+- Thread project_dir through internal modules
+  ([`2516d66`](https://github.com/flo8s/fdl/commit/2516d669dc02ea2bb33838020964ddec2c4e4a50))
+
+Add an optional project_dir keyword to do_pull, pull_if_needed, do_push, run_command,
+  ducklake.connect, and the meta helpers so every internal call-chain can resolve fdl.toml against
+  an explicit project root instead of Path.cwd(). run_command also inherits project_dir as the
+  subprocess cwd. No behavior change when project_dir is not provided — find_project_dir returns the
+  nearest ancestor with fdl.toml, matching the previous cwd assumption.
+
+- **cli**: Delegate CLI handlers to the public Python API
+  ([`1f58600`](https://github.com/flo8s/fdl/commit/1f586001aab5fcfaebb349f883f8416604d5ba02))
+
+Rewrite fdl pull, push, run, sync, and init as thin wrappers around the new fdl.pull / fdl.push /
+  fdl.run / fdl.sync / fdl.init entry points. Keep CLI-only responsibilities (interactive prompts,
+  ValueError -> BadParameter conversion, exit-code transport) in cli.py, and move the "--- pull: ...
+  ---" / "Already up to date" / "skipping push" console messages into the API so Python callers see
+  the same output.
+
+- **config**: Auto-detect project_dir by walking up to find fdl.toml
+  ([`2342b27`](https://github.com/flo8s/fdl/commit/2342b2783d2f97322e68bcb040dfbd6a622a20c6))
+
+Add find_project_dir() and switch default resolution in datasource_name, catalog_type,
+  resolve_target, target_s3_config, target_public_url, target_command, and project_config_path from
+  Path.cwd() to the nearest ancestor that contains fdl.toml. Enables running fdl from subdirectories
+  and lets the upcoming Python API be called from any cwd.
+
+### Testing
+
+- Cover Python API and find_project_dir walk-up behavior
+  ([`b7818be`](https://github.com/flo8s/fdl/commit/b7818bec263de4221b193bd15021d7e2e246f167))
+
+Add tests for the six public entry points (init/pull/push/run/sync/connect), including a local
+  roundtrip, cross-cwd use with explicit project_dir, required target arg, exit-code handling,
+  sync-skip-on-failure, the fdl.toml command fallback, connection close on context exit, and the
+  __all__ surface. Cover find_project_dir with cwd, walk-up, closest-match, missing-file, and
+  explicit-start cases.
+
+### Breaking Changes
+
+- **api**: Fdl run (and fdl sync) now run the pipeline subprocess with the directory containing
+  fdl.toml as its working directory, rather than the caller's cwd. Pipelines that relied on the
+  caller's cwd for relative paths should adjust.
+
+
 ## v0.6.0 (2026-04-04)
 
 ### Features
