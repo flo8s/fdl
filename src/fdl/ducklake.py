@@ -15,6 +15,7 @@ def connect(
     *,
     storage: str | None = None,
     target_name: str | None = None,
+    project_dir: Path | None = None,
 ) -> Generator[duckdb.DuckDBPyConnection]:
     """Connect to the DuckLake catalog and return a DuckDB connection.
 
@@ -29,6 +30,8 @@ def connect(
         storage: Base path for data files.
             Defaults to `FDL_STORAGE` env var, then `.fdl`.
         target_name: Target name for S3 credential resolution.
+        project_dir: Project directory containing fdl.toml. Defaults to the
+            nearest ancestor that contains one.
 
     Yields:
         A DuckDB connection with the DuckLake catalog attached as the
@@ -36,15 +39,11 @@ def connect(
 
     Raises:
         FileNotFoundError: If `.fdl/ducklake.duckdb` does not exist.
-
-    Examples:
-        >>> from fdl.ducklake import connect
-        >>> with connect(storage="/tmp/fdl/mydata", target_name="default") as conn:
-        ...     conn.execute("CREATE TABLE cities (name VARCHAR, pop INTEGER)")
     """
-    from fdl.config import datasource_name
+    from fdl.config import datasource_name, find_project_dir
 
-    name = datasource_name()
+    root = project_dir or find_project_dir()
+    name = datasource_name(root)
 
     import os
 
@@ -55,8 +54,8 @@ def connect(
     if env_catalog:
         ducklake_path = Path(env_catalog)
     else:
-        base = fdl_target_dir(target_name) if target_name else FDL_DIR
-        ducklake_path = base / DUCKLAKE_FILE
+        rel = fdl_target_dir(target_name) if target_name else FDL_DIR
+        ducklake_path = root / rel / DUCKLAKE_FILE
     if not ducklake_path.exists():
         msg = f"{ducklake_path} not found. Run 'fdl init' or 'fdl pull' first."
         raise FileNotFoundError(msg)
@@ -80,7 +79,7 @@ def connect(
 
             if not target_name:
                 raise ValueError("target_name is required for S3 storage")
-            configure_duckdb_s3(conn, target_s3_config(target_name))
+            configure_duckdb_s3(conn, target_s3_config(target_name, root))
         conn.execute(f"""
             ATTACH 'ducklake:{ducklake_path}' AS {name} (
                 DATA_PATH '{data_path}',

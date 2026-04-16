@@ -10,14 +10,19 @@ from fdl.config import PROJECT_CONFIG
 from fdl.console import console
 
 
-def do_push(target: str, *, force: bool = False) -> None:
+def do_push(
+    target: str,
+    *,
+    force: bool = False,
+    project_dir: Path | None = None,
+) -> None:
     """Push catalog to a target (S3 or local). Handles conflict detection."""
     from fdl import fdl_target_dir
-    from fdl.config import datasource_name, resolve_target
+    from fdl.config import datasource_name, find_project_dir, resolve_target
     from fdl.ducklake import convert_sqlite_to_duckdb
     from fdl.meta import PushConflictError
 
-    dataset_dir = Path.cwd()
+    dataset_dir = project_dir or find_project_dir()
     dist_dir = dataset_dir / fdl_target_dir(target)
     datasource = datasource_name(dataset_dir)
 
@@ -30,7 +35,7 @@ def do_push(target: str, *, force: bool = False) -> None:
             from fdl.config import target_s3_config
             from fdl.s3 import create_s3_client
 
-            s3 = target_s3_config(target)
+            s3 = target_s3_config(target, dataset_dir)
             client = create_s3_client(s3)
             push_to_s3(
                 client, s3.bucket, dist_dir, datasource, dataset_dir,
@@ -54,7 +59,10 @@ def push_to_local(
     from fdl.meta import check_conflict, read_pushed_at, stamp, write_meta
 
     remote_meta = output_dir / datasource / FDL_DIR / META_JSON
-    check_conflict(read_pushed_at(remote_meta), force=force, target_name=target_name)
+    check_conflict(
+        read_pushed_at(remote_meta),
+        force=force, target_name=target_name, project_dir=project_dir,
+    )
 
     dest = output_dir / datasource
     dest.mkdir(parents=True, exist_ok=True)
@@ -76,7 +84,7 @@ def push_to_local(
 
     pushed_at = stamp()
     write_meta(dest / FDL_DIR / META_JSON, pushed_at)
-    write_meta(fdl_target_dir(target_name) / META_JSON, pushed_at)
+    write_meta(project_dir / fdl_target_dir(target_name) / META_JSON, pushed_at)
 
 
 def _upload(
@@ -120,7 +128,10 @@ def push_to_s3(
 
     from fdl.meta import check_conflict, read_pushed_at_s3, stamp, write_meta
 
-    check_conflict(read_pushed_at_s3(client, bucket, datasource), force=force, target_name=target_name)
+    check_conflict(
+        read_pushed_at_s3(client, bucket, datasource),
+        force=force, target_name=target_name, project_dir=project_dir,
+    )
 
     _upload(
         client,
@@ -156,4 +167,4 @@ def push_to_s3(
         Body=json.dumps({"pushed_at": pushed_at}).encode(),
         ContentType="application/json; charset=utf-8",
     )
-    write_meta(fdl_target_dir(target_name) / META_JSON, pushed_at)
+    write_meta(project_dir / fdl_target_dir(target_name) / META_JSON, pushed_at)

@@ -37,13 +37,18 @@ def read_pushed_at_s3(client, bucket: str, datasource: str) -> str | None:
         raise
 
 
-def read_remote_pushed_at(resolved: str, target_name: str, datasource: str) -> str | None:
+def read_remote_pushed_at(
+    resolved: str,
+    target_name: str,
+    datasource: str,
+    project_dir: Path | None = None,
+) -> str | None:
     """Read pushed_at from remote meta.json (S3 or local)."""
     if resolved.startswith("s3://"):
         from fdl.config import target_s3_config
         from fdl.s3 import create_s3_client
 
-        s3 = target_s3_config(target_name)
+        s3 = target_s3_config(target_name, project_dir)
         return read_pushed_at_s3(create_s3_client(s3), s3.bucket, datasource)
     else:
         return read_pushed_at(Path(resolved) / datasource / FDL_DIR / META_JSON)
@@ -61,11 +66,19 @@ def is_stale(local_pushed_at: str | None, remote_pushed_at: str | None) -> bool:
     return remote_pushed_at > local_pushed_at
 
 
-def check_conflict(remote_pushed_at: str | None, *, force: bool, target_name: str) -> None:
+def check_conflict(
+    remote_pushed_at: str | None,
+    *,
+    force: bool,
+    target_name: str,
+    project_dir: Path | None = None,
+) -> None:
     """Compare remote pushed_at with local record. Raise on conflict."""
     from fdl import fdl_target_dir
+    from fdl.config import find_project_dir
 
-    local_pushed_at = read_pushed_at(fdl_target_dir(target_name) / META_JSON)
+    root = project_dir or find_project_dir()
+    local_pushed_at = read_pushed_at(root / fdl_target_dir(target_name) / META_JSON)
 
     if not is_stale(local_pushed_at, remote_pushed_at):
         return
@@ -85,7 +98,11 @@ def write_meta(path: Path, pushed_at: str) -> None:
     path.write_text(json.dumps({"pushed_at": pushed_at}))
 
 
-def sync_meta(pushed_at: str | None, target_name: str) -> None:
+def sync_meta(
+    pushed_at: str | None,
+    target_name: str,
+    project_dir: Path | None = None,
+) -> None:
     """Write or clear local .fdl/{target}/meta.json to match remote state.
 
     When remote has no meta.json (pre-conflict-detection push or never pushed),
@@ -93,11 +110,14 @@ def sync_meta(pushed_at: str | None, target_name: str) -> None:
     state. The next push will create meta.json on both sides.
     """
     from fdl import fdl_target_dir
+    from fdl.config import find_project_dir
 
-    path = fdl_target_dir(target_name) / META_JSON
+    root = project_dir or find_project_dir()
+    path = root / fdl_target_dir(target_name) / META_JSON
     if pushed_at is None:
         path.unlink(missing_ok=True)
     else:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"pushed_at": pushed_at}))
 
 

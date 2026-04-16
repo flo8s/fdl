@@ -131,13 +131,17 @@ def data_path(target_name: str | None = None) -> str:
     )
 
 
-def catalog_path(target_name: str | None = None) -> str:
+def catalog_path(
+    target_name: str | None = None,
+    project_dir: Path | None = None,
+) -> str:
     """FDL_CATALOG: path to the DuckLake catalog file (auto-detect sqlite/duckdb)."""
     if v := os.environ.get("FDL_CATALOG"):
         return v
     from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, fdl_target_dir
 
-    base = fdl_target_dir(target_name) if target_name else FDL_DIR
+    rel = fdl_target_dir(target_name) if target_name else FDL_DIR
+    base = (project_dir / rel) if project_dir else rel
     sqlite = base / DUCKLAKE_SQLITE
     if sqlite.exists():
         return str(sqlite)
@@ -145,7 +149,7 @@ def catalog_path(target_name: str | None = None) -> str:
     if duckdb.exists():
         return str(duckdb)
     # Neither exists: fall back to catalog type from fdl.toml
-    if catalog_type() == "sqlite":
+    if catalog_type(project_dir) == "sqlite":
         return str(sqlite)
     return str(duckdb)
 
@@ -174,7 +178,10 @@ def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":
 
 
 def fdl_env_dict(
-    *, target_name: str | None = None, storage_override: str | None = None
+    *,
+    target_name: str | None = None,
+    storage_override: str | None = None,
+    project_dir: Path | None = None,
 ) -> dict[str, str]:
     """All FDL_* settings as env var dict (for fdl run subprocess)."""
     from fdl import DUCKLAKE_FILE, ducklake_data_path
@@ -183,11 +190,11 @@ def fdl_env_dict(
     result = {
         "FDL_STORAGE": storage_val,
         "FDL_DATA_PATH": ducklake_data_path(f"{storage_val}/{DUCKLAKE_FILE}"),
-        "FDL_CATALOG": catalog_path(target_name),
+        "FDL_CATALOG": catalog_path(target_name, project_dir),
     }
     if target_name:
         try:
-            s3 = target_s3_config(target_name)
+            s3 = target_s3_config(target_name, project_dir)
             if s3.endpoint:
                 result["FDL_S3_ENDPOINT"] = s3.endpoint
                 result["FDL_S3_ENDPOINT_HOST"] = s3.endpoint_host
