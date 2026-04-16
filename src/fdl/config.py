@@ -207,6 +207,14 @@ def fdl_env_dict(
     return result
 
 
+def target_storage_url(name: str, project_dir: Path | None = None) -> str:
+    """Effective storage URL for a target: resolved target URL + datasource."""
+    project_dir = project_dir or find_project_dir()
+    resolved = resolve_target(name, project_dir)
+    datasource = datasource_name(project_dir)
+    return f"{resolved}/{datasource}"
+
+
 def resolve_target(name: str, project_dir: Path | None = None) -> str:
     """Resolve a target name to a concrete URL or path from fdl.toml."""
     # Reject direct URLs/paths with helpful hint

@@ -14,6 +14,11 @@ class PushConflictError(Exception):
     """Raised when remote has been updated since last pull."""
 
 
+def remote_meta_key(datasource: str) -> str:
+    """Remote meta.json key relative to a target root (POSIX-style)."""
+    return f"{datasource}/{FDL_DIR}/{META_JSON}"
+
+
 def read_pushed_at(path: Path) -> str | None:
     """Read pushed_at from a meta.json file."""
     if not path.exists():
@@ -26,7 +31,7 @@ def read_pushed_at_s3(client, bucket: str, datasource: str) -> str | None:
     """Read pushed_at from remote .fdl/meta.json on S3."""
     from botocore.exceptions import ClientError
 
-    key = f"{datasource}/{FDL_DIR}/{META_JSON}"
+    key = remote_meta_key(datasource)
     try:
         response = client.get_object(Bucket=bucket, Key=key)
         data = json.loads(response["Body"].read())
@@ -51,7 +56,7 @@ def read_remote_pushed_at(
         s3 = target_s3_config(target_name, project_dir)
         return read_pushed_at_s3(create_s3_client(s3), s3.bucket, datasource)
     else:
-        return read_pushed_at(Path(resolved) / datasource / FDL_DIR / META_JSON)
+        return read_pushed_at(Path(resolved) / remote_meta_key(datasource))
 
 
 def is_stale(local_pushed_at: str | None, remote_pushed_at: str | None) -> bool:

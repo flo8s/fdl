@@ -6,7 +6,7 @@ from pathlib import Path
 
 import duckdb
 
-from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, ducklake_data_path
+from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
 from fdl.console import console
 
 
@@ -40,31 +40,27 @@ def connect(
     Raises:
         FileNotFoundError: If `.fdl/ducklake.duckdb` does not exist.
     """
-    from fdl.config import datasource_name, find_project_dir
+    from fdl.config import (
+        catalog_path,
+        data_path as get_data_path,
+        datasource_name,
+        find_project_dir,
+        storage as get_storage,
+    )
 
     root = project_dir or find_project_dir()
     name = datasource_name(root)
 
-    import os
-
-    from fdl import fdl_target_dir
-
-    # FDL_CATALOG env var (set by fdl run) takes precedence over target_name
-    env_catalog = os.environ.get("FDL_CATALOG")
-    if env_catalog:
-        ducklake_path = Path(env_catalog)
-    else:
-        rel = fdl_target_dir(target_name) if target_name else FDL_DIR
-        ducklake_path = root / rel / DUCKLAKE_FILE
+    ducklake_path = Path(catalog_path(target_name, root))
     if not ducklake_path.exists():
         msg = f"{ducklake_path} not found. Run 'fdl init' or 'fdl pull' first."
         raise FileNotFoundError(msg)
 
     if storage is None:
-        from fdl.config import storage as get_storage
-
-        storage = get_storage()
-    data_path = ducklake_data_path(f"{storage}/{DUCKLAKE_FILE}")
+        storage = get_storage(target_name)
+        data_path = get_data_path(target_name)
+    else:
+        data_path = ducklake_data_path(f"{storage}/{DUCKLAKE_FILE}")
 
     # Ensure local storage directory exists for data file writes
     if not storage.startswith("s3://"):

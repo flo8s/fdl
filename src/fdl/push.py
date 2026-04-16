@@ -5,9 +5,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, META_JSON
+from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, META_JSON
 from fdl.config import PROJECT_CONFIG
 from fdl.console import console
+from fdl.meta import remote_meta_key
 
 
 def do_push(
@@ -58,7 +59,7 @@ def push_to_local(
     """Copy artifacts to a local directory."""
     from fdl.meta import check_conflict, read_pushed_at, stamp, write_meta
 
-    remote_meta = output_dir / datasource / FDL_DIR / META_JSON
+    remote_meta = output_dir / remote_meta_key(datasource)
     check_conflict(
         read_pushed_at(remote_meta),
         force=force, target_name=target_name, project_dir=project_dir,
@@ -83,7 +84,7 @@ def push_to_local(
     from fdl import fdl_target_dir
 
     pushed_at = stamp()
-    write_meta(dest / FDL_DIR / META_JSON, pushed_at)
+    write_meta(output_dir / remote_meta_key(datasource), pushed_at)
     write_meta(project_dir / fdl_target_dir(target_name) / META_JSON, pushed_at)
 
 
@@ -163,7 +164,7 @@ def push_to_s3(
     pushed_at = stamp()
     client.put_object(
         Bucket=bucket,
-        Key=f"{datasource}/{FDL_DIR}/{META_JSON}",
+        Key=remote_meta_key(datasource),
         Body=json.dumps({"pushed_at": pushed_at}).encode(),
         ContentType="application/json; charset=utf-8",
     )
