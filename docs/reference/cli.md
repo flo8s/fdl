@@ -1,5 +1,9 @@
 # CLI Reference
 
+All commands (except `init`) discover `fdl.toml` by walking up from the
+current working directory, so they can be run from any subdirectory of your
+project. The same lookup is also used by the [Python API](python-api.md).
+
 ## Commands
 
 | Command | Description |
