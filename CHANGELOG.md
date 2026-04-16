@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.7.1 (2026-04-16)
+
+### Bug Fixes
+
+- Update connect function to use catalog_path and simplify ducklake_path logic
+  ([`3f56968`](https://github.com/flo8s/fdl/commit/3f5696892a2b996164d1057785cc15ed969f6223))
+
+### Refactoring
+
+- Storage URL handling and add remote meta key function
+  ([`5638d2f`](https://github.com/flo8s/fdl/commit/5638d2f4523015f8d97b626516c469aa05e5eb50))
+
+
 ## v0.7.0 (2026-04-16)
 
 ### Bug Fixes
