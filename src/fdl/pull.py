@@ -6,8 +6,9 @@ import json
 import shutil
 from pathlib import Path
 
-from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, META_JSON
+from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, META_JSON
 from fdl.console import console
+from fdl.meta import remote_meta_key
 
 
 def do_pull(
@@ -91,7 +92,7 @@ def pull_from_local(
     # Sync .fdl/meta.json from remote
     from fdl.meta import sync_meta
 
-    meta_file = src / FDL_DIR / META_JSON
+    meta_file = source_dir / remote_meta_key(datasource)
     if meta_file.exists():
         data = json.loads(meta_file.read_text())
         sync_meta(data.get("pushed_at"), target_name, project_dir)

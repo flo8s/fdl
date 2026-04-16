@@ -314,13 +314,12 @@ def connect(
             be located. Run ``fdl.init`` or ``fdl.pull`` first.
         ValueError: If ``target`` is not defined in ``fdl.toml``.
     """
-    from fdl.config import datasource_name, find_project_dir, resolve_target
+    from fdl.config import datasource_name, find_project_dir, target_storage_url
     from fdl.ducklake import connect as _connect
 
     root = project_dir or find_project_dir()
-    resolved = resolve_target(target, root)
     datasource = datasource_name(root)
-    storage_val = f"{resolved}/{datasource}"
+    storage_val = target_storage_url(target, root)
 
     with _connect(
         storage=storage_val, target_name=target, project_dir=root

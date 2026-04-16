@@ -29,13 +29,14 @@ def run_command(
         find_project_dir,
         resolve_target,
         target_public_url,
+        target_storage_url,
     )
     from fdl.ducklake import init_ducklake
 
     root = project_dir or find_project_dir()
     resolved = resolve_target(target, root)
     datasource = datasource_name(root)
-    storage_val = f"{resolved}/{datasource}"
+    storage_val = target_storage_url(target, root)
 
     target_dir = root / fdl_target_dir(target)
     target_dir.mkdir(parents=True, exist_ok=True)

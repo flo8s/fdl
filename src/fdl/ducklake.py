@@ -40,7 +40,13 @@ def connect(
     Raises:
         FileNotFoundError: If `.fdl/ducklake.duckdb` does not exist.
     """
-    from fdl.config import catalog_path, datasource_name, find_project_dir
+    from fdl.config import (
+        catalog_path,
+        data_path as get_data_path,
+        datasource_name,
+        find_project_dir,
+        storage as get_storage,
+    )
 
     root = project_dir or find_project_dir()
     name = datasource_name(root)
@@ -51,10 +57,10 @@ def connect(
         raise FileNotFoundError(msg)
 
     if storage is None:
-        from fdl.config import storage as get_storage
-
-        storage = get_storage()
-    data_path = ducklake_data_path(f"{storage}/{DUCKLAKE_FILE}")
+        storage = get_storage(target_name)
+        data_path = get_data_path(target_name)
+    else:
+        data_path = ducklake_data_path(f"{storage}/{DUCKLAKE_FILE}")
 
     # Ensure local storage directory exists for data file writes
     if not storage.startswith("s3://"):
