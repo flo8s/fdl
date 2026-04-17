@@ -272,19 +272,17 @@ def sql(
 ) -> None:
     """Execute a SQL query against the DuckLake catalog."""
     import fdl
-    from fdl.config import datasource_name, resolve_target
-    from fdl.meta import PushConflictError, check_conflict, read_remote_pushed_at
+    from fdl.config import datasource_name
+    from fdl.meta import catalog_is_stale
 
     resolved = _resolve_target(target)
     datasource = datasource_name()
 
-    try:
-        check_conflict(
-            read_remote_pushed_at(resolved, target, datasource),
-            force=force, target_name=target,
+    if not force and catalog_is_stale(target, resolved, datasource):
+        console.print(
+            "[red]Remote catalog has been updated since the last pull. "
+            "Run 'fdl pull' first, or use --force to override.[/red]"
         )
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
         raise SystemExit(1)
 
     with fdl.connect(target) as conn:
@@ -334,19 +332,16 @@ def duckdb(
 
     from fdl.config import datasource_name
     from fdl.ducklake import build_attach_sql
-    from fdl.meta import PushConflictError, check_conflict, read_remote_pushed_at
+    from fdl.meta import catalog_is_stale
 
     resolved = _resolve_target(target)
     datasource = datasource_name()
 
-    try:
-        check_conflict(
-            read_remote_pushed_at(resolved, target, datasource),
-            force=force,
-            target_name=target,
+    if not force and catalog_is_stale(target, resolved, datasource):
+        console.print(
+            "[red]Remote catalog has been updated since the last pull. "
+            "Run 'fdl pull' first, or use --force to override.[/red]"
         )
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
         raise SystemExit(1)
 
     stmts = build_attach_sql(target, read_only=read_only)

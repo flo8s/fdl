@@ -12,7 +12,6 @@ os.execvp would replace the pytest process, so every CLI test either:
  (c) passes a nonexistent --duckdb-bin so FileNotFoundError fires before exec.
 """
 
-import json
 import re
 import shlex
 from pathlib import Path
@@ -181,28 +180,32 @@ def test_dry_run_s3_target_includes_secret(s3_project: Path):
     assert "URL_STYLE 'path'" in secret
 
 
-def test_stale_catalog_is_rejected(fdl_project_dir: Path):
-    """Stale local catalog is rejected with the same error as fdl sql."""
-    storage = _init_local(fdl_project_dir)
+def test_stale_catalog_is_rejected(s3_project: Path, moto_s3):
+    """Stale catalog (S3 target) is rejected with the same error as fdl sql."""
     cli = CliRunner()
     cli.invoke(app, ["push", "default"])
 
-    remote_meta = storage / "test_ds" / ".fdl" / "meta.json"
-    remote_meta.write_text(json.dumps({"pushed_at": "2099-01-01T00:00:00+00:00"}))
+    moto_s3.put_object(
+        Bucket="test-bucket",
+        Key="test_ds/ducklake.duckdb",
+        Body=b"external change",
+    )
 
     result = cli.invoke(app, ["duckdb", "default", "--dry-run"])
     assert result.exit_code != 0
     assert "fdl pull" in result.output.lower()
 
 
-def test_force_skips_freshness_check(fdl_project_dir: Path):
+def test_force_skips_freshness_check(s3_project: Path, moto_s3):
     """--force bypasses the stale catalog check."""
-    storage = _init_local(fdl_project_dir)
     cli = CliRunner()
     cli.invoke(app, ["push", "default"])
 
-    remote_meta = storage / "test_ds" / ".fdl" / "meta.json"
-    remote_meta.write_text(json.dumps({"pushed_at": "2099-01-01T00:00:00+00:00"}))
+    moto_s3.put_object(
+        Bucket="test-bucket",
+        Key="test_ds/ducklake.duckdb",
+        Body=b"external change",
+    )
 
     result = cli.invoke(
         app, ["duckdb", "default", "--dry-run", "--force"]

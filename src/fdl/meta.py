@@ -1,131 +1,72 @@
-"""Push conflict detection via .fdl/meta.json."""
+"""Push conflict detection via ETag + If-Match preconditions.
+
+Local state (``.fdl/<target>/meta.json``) stores the ETag of the remote
+``ducklake.duckdb`` observed after the last push or pull. On the next push,
+``put_object`` is issued with ``If-Match: <saved_etag>`` so that S3 rejects
+the write with HTTP 412 if another client has pushed in the meantime.
+"""
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
-
-from fdl import FDL_DIR, META_JSON
-from fdl.console import console
 
 
 class PushConflictError(Exception):
     """Raised when remote has been updated since last pull."""
 
 
-def remote_meta_key(datasource: str) -> str:
-    """Remote meta.json key relative to a target root (POSIX-style)."""
-    return f"{datasource}/{FDL_DIR}/{META_JSON}"
+def read_remote_etag(path: Path) -> str | None:
+    """Read the saved remote ETag from ``.fdl/<target>/meta.json``.
 
-
-def read_pushed_at(path: Path) -> str | None:
-    """Read pushed_at from a meta.json file."""
+    Returns None when the file is missing or only contains legacy fields
+    (e.g. ``pushed_at`` from pre-ETag versions). In that case the caller
+    should treat the state as "no record" and either pull to initialize
+    it or use ``--force``.
+    """
     if not path.exists():
         return None
     data = json.loads(path.read_text())
-    return data.get("pushed_at")
+    etag = data.get("remote_etag")
+    return etag if isinstance(etag, str) else None
 
 
-def read_pushed_at_s3(client, bucket: str, datasource: str) -> str | None:
-    """Read pushed_at from remote .fdl/meta.json on S3."""
-    from botocore.exceptions import ClientError
-
-    key = remote_meta_key(datasource)
-    try:
-        response = client.get_object(Bucket=bucket, Key=key)
-        data = json.loads(response["Body"].read())
-        return data.get("pushed_at")
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "NoSuchKey":
-            return None
-        raise
-
-
-def read_remote_pushed_at(
-    resolved: str,
-    target_name: str,
-    datasource: str,
-    project_dir: Path | None = None,
-) -> str | None:
-    """Read pushed_at from remote meta.json (S3 or local)."""
-    if resolved.startswith("s3://"):
-        from fdl.config import target_s3_config
-        from fdl.s3 import create_s3_client
-
-        s3 = target_s3_config(target_name, project_dir)
-        return read_pushed_at_s3(create_s3_client(s3), s3.bucket, datasource)
-    else:
-        return read_pushed_at(Path(resolved) / remote_meta_key(datasource))
-
-
-def is_stale(local_pushed_at: str | None, remote_pushed_at: str | None) -> bool:
-    """Check if local catalog is behind remote.
-
-    Pure function: returns True if remote is newer than local.
-    Returns False if either side has no timestamp (first push, or
-    pre-conflict-detection state).
-    """
-    if local_pushed_at is None or remote_pushed_at is None:
-        return False
-    return remote_pushed_at > local_pushed_at
-
-
-def check_conflict(
-    remote_pushed_at: str | None,
-    *,
-    force: bool,
-    target_name: str,
-    project_dir: Path | None = None,
-) -> None:
-    """Compare remote pushed_at with local record. Raise on conflict."""
-    from fdl import fdl_target_dir
-    from fdl.config import find_project_dir
-
-    root = project_dir or find_project_dir()
-    local_pushed_at = read_pushed_at(root / fdl_target_dir(target_name) / META_JSON)
-
-    if not is_stale(local_pushed_at, remote_pushed_at):
-        return
-
-    if force:
-        console.print("[yellow]Force: overriding conflict detection[/yellow]")
-        return
-    raise PushConflictError(
-        f"Remote was pushed at {remote_pushed_at}. "
-        f"Run 'fdl pull' first, or use --force to override."
-    )
-
-
-def write_meta(path: Path, pushed_at: str) -> None:
-    """Write meta.json to a file."""
+def write_remote_etag(path: Path, etag: str) -> None:
+    """Write ``{"remote_etag": <etag>}`` to the state file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"pushed_at": pushed_at}))
+    path.write_text(json.dumps({"remote_etag": etag}))
 
 
-def sync_meta(
-    pushed_at: str | None,
-    target_name: str,
+def catalog_is_stale(
+    target: str,
+    resolved: str,
+    datasource: str,
+    *,
     project_dir: Path | None = None,
-) -> None:
-    """Write or clear local .fdl/{target}/meta.json to match remote state.
+) -> bool:
+    """Return True if the local catalog ETag differs from the remote.
 
-    When remote has no meta.json (pre-conflict-detection push or never pushed),
-    the local copy is removed so both sides are in the "no conflict detection"
-    state. The next push will create meta.json on both sides.
+    Used by commands that read from the local catalog (e.g. ``fdl sql``)
+    to detect that the local copy is behind the remote.
+
+    Returns False for non-S3 targets (local targets skip conflict
+    detection) or when no local ETag has been recorded yet.
     """
-    from fdl import fdl_target_dir
-    from fdl.config import find_project_dir
+    if not resolved.startswith("s3://"):
+        return False
+
+    from fdl import DUCKLAKE_FILE, META_JSON, fdl_target_dir
+    from fdl.config import find_project_dir, target_s3_config
+    from fdl.pull import _head_catalog_etag
+    from fdl.s3 import create_s3_client
 
     root = project_dir or find_project_dir()
-    path = root / fdl_target_dir(target_name) / META_JSON
-    if pushed_at is None:
-        path.unlink(missing_ok=True)
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"pushed_at": pushed_at}))
+    local_etag = read_remote_etag(root / fdl_target_dir(target) / META_JSON)
+    if local_etag is None:
+        return False
 
-
-def stamp() -> str:
-    """Generate a pushed_at timestamp (UTC ISO 8601)."""
-    return datetime.now(timezone.utc).isoformat()
+    s3 = target_s3_config(target, root)
+    remote_etag = _head_catalog_etag(
+        create_s3_client(s3), s3.bucket, f"{datasource}/{DUCKLAKE_FILE}"
+    )
+    return remote_etag is not None and remote_etag != local_etag

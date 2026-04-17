@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, META_JSON
 from fdl.console import console
-from fdl.meta import remote_meta_key
 
 
 def do_pull(
@@ -30,10 +28,7 @@ def do_pull(
             target_name=target, project_dir=project_dir,
         )
     else:
-        pull_from_local(
-            Path(resolved), dist_dir, datasource,
-            target_name=target, project_dir=project_dir,
-        )
+        pull_from_local(Path(resolved), dist_dir, datasource)
 
 
 def pull_if_needed(
@@ -46,36 +41,65 @@ def pull_if_needed(
     """Pull if local catalog is missing, unsynced, or stale.
 
     Returns the reason for pulling, or None if already up to date.
-    """
-    if not (target_dir / DUCKLAKE_FILE).exists() and not (target_dir / DUCKLAKE_SQLITE).exists():
-        reason = "No local catalog"
-    elif not (target_dir / META_JSON).exists():
-        reason = "Catalog not synced"
-    else:
-        from fdl.meta import is_stale, read_pushed_at, read_remote_pushed_at
 
-        local = read_pushed_at(target_dir / META_JSON)
-        remote = read_remote_pushed_at(resolved, target, datasource, project_dir)
-        if is_stale(local, remote):
-            reason = "Remote is newer"
-        else:
+    - Local targets: pull only when the catalog file is missing (no
+      ETag-based stale detection).
+    - S3 targets: compare the saved remote ETag with the server's
+      current ETag via HEAD and pull on mismatch.
+    """
+    catalog_exists = (
+        (target_dir / DUCKLAKE_FILE).exists()
+        or (target_dir / DUCKLAKE_SQLITE).exists()
+    )
+    if not catalog_exists:
+        reason = "No local catalog"
+    elif resolved.startswith("s3://"):
+        reason = _s3_stale_reason(target_dir, resolved, target, datasource, project_dir)
+        if reason is None:
             return None
+    else:
+        return None
 
     do_pull(resolved, target, target_dir, datasource, project_dir)
     return reason
+
+
+def _s3_stale_reason(
+    target_dir: Path,
+    resolved: str,
+    target: str,
+    datasource: str,
+    project_dir: Path | None,
+) -> str | None:
+    """Return a reason string when the S3 remote has diverged from local state."""
+    from fdl.config import target_s3_config
+    from fdl.meta import read_remote_etag
+    from fdl.s3 import create_s3_client
+
+    local_etag = read_remote_etag(target_dir / META_JSON)
+    if local_etag is None:
+        return "Catalog not synced"
+
+    s3 = target_s3_config(target, project_dir)
+    remote_etag = _head_catalog_etag(
+        create_s3_client(s3), s3.bucket, f"{datasource}/{DUCKLAKE_FILE}"
+    )
+    if remote_etag is None:
+        return None
+    if remote_etag != local_etag:
+        return "Remote is newer"
+    return None
 
 
 def pull_from_local(
     source_dir: Path,
     dist_dir: Path,
     datasource: str,
-    *,
-    target_name: str,
-    project_dir: Path | None = None,
 ) -> bool:
     """Copy catalog from a local directory into dist/.
 
-    Returns True if catalog was found.
+    Returns True if catalog was found. Local targets do not maintain
+    conflict-detection state.
     """
     src = source_dir / datasource
     if not src.exists():
@@ -88,16 +112,6 @@ def pull_from_local(
         if src_file.exists():
             console.print(f"  [dim]{datasource}/{name}[/dim]")
             shutil.copy2(src_file, dist_dir / name)
-
-    # Sync .fdl/meta.json from remote
-    from fdl.meta import sync_meta
-
-    meta_file = source_dir / remote_meta_key(datasource)
-    if meta_file.exists():
-        data = json.loads(meta_file.read_text())
-        sync_meta(data.get("pushed_at"), target_name, project_dir)
-    else:
-        sync_meta(None, target_name, project_dir)
 
     return True
 
@@ -117,6 +131,21 @@ def _download_file(client, bucket: str, key: str, dest: Path) -> bool:
         raise
 
 
+def _head_catalog_etag(client, bucket: str, key: str) -> str | None:
+    """Return the current ETag of the remote catalog, or None if absent."""
+    from botocore.exceptions import ClientError
+
+    try:
+        response = client.head_object(Bucket=bucket, Key=key)
+    except ClientError as e:
+        code = e.response["Error"].get("Code", "")
+        status = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if code in {"404", "NoSuchKey"} or status == 404:
+            return None
+        raise
+    return response.get("ETag")
+
+
 def fetch_from_s3(
     client,
     bucket: str,
@@ -126,10 +155,14 @@ def fetch_from_s3(
     target_name: str,
     project_dir: Path | None = None,
 ) -> bool:
-    """Download DuckLake catalog files from S3.
+    """Download DuckLake catalog files from S3 and record the ETag.
 
     Returns True if ducklake.duckdb was found (fetch succeeded).
     """
+    from fdl import fdl_target_dir
+    from fdl.config import find_project_dir
+    from fdl.meta import write_remote_etag
+
     dist_dir.mkdir(parents=True, exist_ok=True)
 
     found = _download_file(
@@ -139,9 +172,12 @@ def fetch_from_s3(
         client, bucket, f"{datasource}/{DUCKLAKE_SQLITE}", dist_dir / DUCKLAKE_SQLITE
     )
 
-    # Sync pushed_at from remote meta
-    from fdl.meta import read_pushed_at_s3, sync_meta
-
-    sync_meta(read_pushed_at_s3(client, bucket, datasource), target_name, project_dir)
+    root = project_dir or find_project_dir()
+    state_path = root / fdl_target_dir(target_name) / META_JSON
+    etag = _head_catalog_etag(client, bucket, f"{datasource}/{DUCKLAKE_FILE}")
+    if etag is None:
+        state_path.unlink(missing_ok=True)
+    else:
+        write_remote_etag(state_path, etag)
 
     return found

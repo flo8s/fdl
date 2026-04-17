@@ -9,12 +9,10 @@ Spec (docs/reference/cli.md#sync):
   - --force overrides conflict detection on push
 """
 
-import json
 from pathlib import Path
 
 from typer.testing import CliRunner
 
-from fdl import FDL_DIR, META_JSON
 from fdl.cli import app
 from fdl.config import set_value
 
@@ -45,12 +43,6 @@ def test_sync_runs_pull_run_push(fdl_project_dir: Path):
     # push should have copied catalog and fdl.toml to target
     assert (storage / "test_ds" / "ducklake.duckdb").exists()
     assert (storage / "test_ds" / "fdl.toml").exists()
-
-    # meta.json should exist (push writes it)
-    remote_meta = storage / "test_ds" / FDL_DIR / META_JSON
-    assert remote_meta.exists()
-    data = json.loads(remote_meta.read_text())
-    assert "pushed_at" in data
 
 
 def test_sync_with_explicit_command(fdl_project_dir: Path):
