@@ -309,6 +309,66 @@ def sql(
 
 
 @app.command()
+def duckdb(
+    target: str = typer.Argument(..., help="Target name (e.g. default)"),
+    read_only: bool = typer.Option(
+        False, "--read-only", help="Open the catalog in read-only mode"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip stale catalog check"
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print the duckdb command that would be executed and exit",
+    ),
+    duckdb_bin: str = typer.Option(
+        "duckdb",
+        "--duckdb-bin",
+        help="Path to the duckdb binary (default: first on PATH)",
+    ),
+) -> None:
+    """Launch an interactive DuckDB shell with the DuckLake catalog attached."""
+    import os
+    import shlex
+
+    from fdl.config import datasource_name
+    from fdl.ducklake import build_attach_sql
+    from fdl.meta import PushConflictError, check_conflict, read_remote_pushed_at
+
+    resolved = _resolve_target(target)
+    datasource = datasource_name()
+
+    try:
+        check_conflict(
+            read_remote_pushed_at(resolved, target, datasource),
+            force=force,
+            target_name=target,
+        )
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1)
+
+    stmts = build_attach_sql(target, read_only=read_only)
+    argv = [duckdb_bin]
+    for s in stmts:
+        argv += ["-cmd", s]
+
+    if dry_run:
+        print(shlex.join(argv))
+        return
+
+    try:
+        os.execvp(duckdb_bin, argv)
+    except FileNotFoundError:
+        console.print(
+            f"[red]duckdb binary '{duckdb_bin}' not found on PATH. "
+            f"Install DuckDB CLI or pass --duckdb-bin.[/red]"
+        )
+        raise SystemExit(127)
+
+
+@app.command()
 def serve(
     target: str = typer.Argument(..., help="Target name (e.g. default)"),
     port: int = typer.Option(4001, help="Port number"),

@@ -98,6 +98,17 @@ fdl sql default "SELECT * FROM cities"
 
 Each call is a separate connection — no transactions across multiple `fdl sql` invocations.
 
+## fdl duckdb
+
+For interactive exploration, `fdl duckdb TARGET` launches the DuckDB CLI with the catalog already attached and selected:
+
+```bash
+fdl duckdb default
+# D SELECT count(*) FROM cities;
+```
+
+Use `--read-only` for safe browsing on shared data. See [`fdl duckdb`](../reference/cli.md#duckdb) for options.
+
 ## Verify with fdl serve
 
 After writing data, verify it's accessible over HTTP:
