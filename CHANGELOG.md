@@ -1,6 +1,57 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-04-17)
+
+### Chores
+
+- Sync uv.lock with pyproject version 0.7.1
+  ([`86d3a1c`](https://github.com/flo8s/fdl/commit/86d3a1cf21ea3bc8e65bbb6de6f3d2476cf35759))
+
+### Documentation
+
+- Describe ETag-based push conflict detection
+  ([`67922dc`](https://github.com/flo8s/fdl/commit/67922dc8126448b372a74b7ff10daf13b42abe5f))
+
+Replace the .fdl/meta.json timestamp description in the push section with the new If-Match
+  precondition flow and clarify that local (non-S3) targets skip conflict detection.
+
+### Features
+
+- Use ETag + If-Match for push conflict detection
+  ([`07aeaf0`](https://github.com/flo8s/fdl/commit/07aeaf0a702bd595891d496de49a71b78c2d17a3))
+
+Replace the client-generated pushed_at JSON file with server-side ETag preconditions on the catalog
+  object (put_object + If-Match / If-None-Match). The S3 server evaluates the precondition
+  atomically, closing the TOCTOU race between check and write, removing client clock-drift
+  sensitivity, and detecting direct catalog mutations such as set_option.
+
+Local (non-S3) targets skip conflict detection entirely. The remote .fdl/meta.json object is no
+  longer written or read. Legacy state files containing only {"pushed_at": ...} are treated as no
+  record on read.
+
+BREAKING CHANGE: existing users must run `fdl pull` once after upgrading, or pass `--force` on the
+  next push, to initialize the new ETag-based local state.
+
+- **cli**: Add fdl duckdb for interactive shells
+  ([`2ed08b0`](https://github.com/flo8s/fdl/commit/2ed08b0126a20d6d56d408f0499566501fc44803))
+
+Add `fdl duckdb TARGET [--read-only] [--force] [--dry-run] [--duckdb-bin PATH]` that resolves the
+  target, performs the stale catalog check, builds the INSTALL / ATTACH / USE init SQL (including
+  INSTALL httpfs + CREATE SECRET for S3 targets), and execs into the DuckDB CLI via os.execvp so
+  that TTY, signals, and exit code are inherited. --dry-run prints shlex.join(argv) instead of
+  execing.
+
+Extract the init SQL builder as build_attach_sql() in fdl.ducklake and reuse it from
+  fdl.ducklake.connect(). Paths and credentials embedded in SQL literals are single-quote escaped.
+  Move shared moto/s3_project fixtures to tests/integration/conftest.py.
+
+### Breaking Changes
+
+- Existing users must run `fdl pull` once after upgrading, or pass `--force` on the next push, to
+  initialize the new ETag-based local state.
+
+
 ## v0.7.1 (2026-04-16)
 
 ### Bug Fixes
