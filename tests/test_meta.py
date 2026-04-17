@@ -1,37 +1,39 @@
-"""Unit tests for fdl/meta.py — conflict detection logic.
+"""Unit tests for fdl/meta.py — ETag state file I/O."""
 
-is_stale is a pure function that determines if the local catalog
-is behind the remote based on pushed_at timestamps.
-"""
+import json
 
-from fdl.meta import is_stale
+from fdl.meta import read_remote_etag, write_remote_etag
 
 
-def test_remote_newer_is_stale():
-    """Remote pushed after local → stale."""
-    assert is_stale("2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00") is True
+def test_read_returns_none_when_missing(tmp_path):
+    """No state file → None."""
+    assert read_remote_etag(tmp_path / "missing.json") is None
 
 
-def test_same_timestamp_is_not_stale():
-    """Timestamps match → not stale (same push, no conflict)."""
-    assert is_stale("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00") is False
+def test_write_then_read_round_trip(tmp_path):
+    """Written ETag is read back as-is (quotes preserved)."""
+    path = tmp_path / "meta.json"
+    write_remote_etag(path, '"abc123"')
+    assert read_remote_etag(path) == '"abc123"'
 
 
-def test_local_newer_is_not_stale():
-    """Local pushed after remote → not stale (e.g. after --force push)."""
-    assert is_stale("2026-02-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00") is False
+def test_write_creates_parent_directories(tmp_path):
+    """write_remote_etag creates missing parent directories."""
+    path = tmp_path / "nested" / "dir" / "meta.json"
+    write_remote_etag(path, '"xyz"')
+    assert path.exists()
+    assert json.loads(path.read_text()) == {"remote_etag": '"xyz"'}
 
 
-def test_no_local_timestamp_is_not_stale():
-    """No local meta.json → not stale (first interaction, no conflict detection)."""
-    assert is_stale(None, "2026-01-01T00:00:00+00:00") is False
+def test_read_returns_none_for_legacy_pushed_at(tmp_path):
+    """Old {"pushed_at": "..."} state is treated as no record."""
+    path = tmp_path / "meta.json"
+    path.write_text(json.dumps({"pushed_at": "2026-01-01T00:00:00+00:00"}))
+    assert read_remote_etag(path) is None
 
 
-def test_no_remote_timestamp_is_not_stale():
-    """No remote meta.json → not stale (first push to this target)."""
-    assert is_stale("2026-01-01T00:00:00+00:00", None) is False
-
-
-def test_both_none_is_not_stale():
-    """Neither side has meta.json → not stale."""
-    assert is_stale(None, None) is False
+def test_read_returns_none_when_etag_is_not_string(tmp_path):
+    """Malformed remote_etag field is treated as no record."""
+    path = tmp_path / "meta.json"
+    path.write_text(json.dumps({"remote_etag": None}))
+    assert read_remote_etag(path) is None

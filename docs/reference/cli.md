@@ -74,15 +74,17 @@ Pushes the DuckLake catalog (`ducklake.duckdb`) and `fdl.toml` to the target. Da
 
 SQLite catalogs are automatically converted to DuckDB during push.
 
-### Conflict detection
+### Conflict detection (S3 targets)
 
-Before pushing, fdl checks the remote's `.fdl/meta.json` against the local copy. If someone else has pushed since your last pull, push is rejected:
+For S3 (and S3-compatible) targets, fdl uploads the catalog with an HTTP `If-Match` precondition using the ETag recorded from the previous push or pull. If another client has pushed in the meantime, the S3 server rejects the upload with `412 Precondition Failed` and fdl surfaces the conflict:
 
 ```
-Remote was pushed at 2026-04-01T00:00:00+00:00. Run 'fdl pull' first, or use --force to override.
+Remote catalog has been updated since the last pull. Run 'fdl pull' first, or use --force to override.
 ```
 
-Use `--force` to skip this check. The first push to a target with no `.fdl/meta.json` always succeeds.
+The precondition is evaluated atomically on the server, so there is no race window between the check and the write. The first push to an empty target uses `If-None-Match: *`, which succeeds only when no catalog is present.
+
+Use `--force` to skip the precondition. Local (non-S3) targets are assumed single-user and skip conflict detection entirely.
 
 ## sync
 

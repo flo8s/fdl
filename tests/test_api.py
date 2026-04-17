@@ -167,27 +167,53 @@ def test_init_rejects_existing_config(
 
 
 def test_push_raises_push_conflict_error(
-    fdl_project_dir: Path, tmp_path_factory
+    fdl_project_dir: Path, monkeypatch
 ) -> None:
-    """fdl.push raises PushConflictError instead of SystemExit on conflict."""
+    """fdl.push raises PushConflictError instead of SystemExit on conflict.
+
+    Uses an S3 target via moto because local targets skip conflict detection.
+    """
+    import boto3
+    from moto import mock_aws
+
     from fdl.meta import PushConflictError
 
-    remote = tmp_path_factory.mktemp("remote")
-    _init_local_project(fdl_project_dir, remote=remote)
+    bucket = "api-test-bucket"
 
-    with fdl.connect("default") as conn:
-        conn.execute("CREATE TABLE t (x INTEGER)")
-    fdl.push("default")
+    def _moto_client_factory(s3):
+        return boto3.client(
+            "s3",
+            region_name="us-east-1",
+            aws_access_key_id=s3.access_key_id,
+            aws_secret_access_key=s3.secret_access_key,
+        )
 
-    # Someone else pushes a newer meta.json to the remote
-    import json
-    from fdl import FDL_DIR, META_JSON
+    with mock_aws():
+        monkeypatch.setattr("fdl.s3.create_s3_client", _moto_client_factory)
+        external = boto3.client("s3", region_name="us-east-1")
+        external.create_bucket(Bucket=bucket)
 
-    remote_meta = remote / "mydata" / FDL_DIR / META_JSON
-    remote_meta.write_text(json.dumps({"pushed_at": "2099-01-01T00:00:00+00:00"}))
+        fdl.init(
+            "mydata",
+            target_url=f"s3://{bucket}",
+            project_dir=fdl_project_dir,
+        )
+        from fdl.config import set_value
+        set_value("targets.default.s3_endpoint", "https://s3.us-east-1.amazonaws.com")
+        set_value("targets.default.s3_access_key_id", "testing")
+        set_value("targets.default.s3_secret_access_key", "testing")
 
-    with pytest.raises(PushConflictError):
-        fdl.push("default")
+        fdl.push("default", project_dir=fdl_project_dir)
+
+        # Simulate another client overwriting the catalog — this bumps the ETag.
+        external.put_object(
+            Bucket=bucket,
+            Key="mydata/ducklake.duckdb",
+            Body=b"external change",
+        )
+
+        with pytest.raises(PushConflictError):
+            fdl.push("default", project_dir=fdl_project_dir)
 
 
 def test_init_rollback_on_failure(
