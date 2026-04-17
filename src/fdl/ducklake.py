@@ -10,78 +10,141 @@ from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
 from fdl.console import console
 
 
+def _sql_escape(s: str) -> str:
+    """Escape a string for use inside a SQL single-quoted literal."""
+    return s.replace("'", "''")
+
+
+def build_attach_sql(
+    target_name: str | None = None,
+    *,
+    read_only: bool = False,
+    project_dir: Path | None = None,
+) -> list[str]:
+    """Build the SQL statements to open a target's DuckLake catalog.
+
+    Returns the statements in execution order:
+      1. INSTALL ducklake; LOAD ducklake;
+      2. (S3 only) INSTALL httpfs; LOAD httpfs;
+      3. (S3 only) CREATE SECRET (TYPE s3, ...)
+      4. ATTACH 'ducklake:<path>' AS <datasource>
+         (DATA_PATH '<dp>', OVERRIDE_DATA_PATH true[, READ_ONLY])
+      5. USE <datasource>
+
+    Paths and credentials containing single quotes are SQL-escaped
+    (`'` -> `''`). The caller is responsible for any filesystem side
+    effects (e.g. creating the local data directory for local targets).
+
+    Args:
+        target_name: Target name from fdl.toml. When ``None``, the storage
+            is resolved from ``FDL_STORAGE`` / default ``.fdl`` (local only).
+        read_only: When ``True``, append ``READ_ONLY`` to the ATTACH options.
+        project_dir: Project directory containing fdl.toml. Defaults to the
+            nearest ancestor that contains one.
+
+    Raises:
+        FileNotFoundError: If the local catalog file does not exist.
+        ValueError: If storage resolves to S3 but ``target_name`` is ``None``.
+    """
+    from fdl.config import (
+        catalog_path,
+        datasource_name,
+        find_project_dir,
+        storage as get_storage,
+        target_s3_config,
+        target_storage_url,
+    )
+
+    root = project_dir or find_project_dir()
+    name = datasource_name(root)
+    ducklake_path = Path(catalog_path(target_name, root))
+    if not ducklake_path.exists():
+        raise FileNotFoundError(
+            f"{ducklake_path} not found. Run 'fdl init' or 'fdl pull' first."
+        )
+
+    if target_name is not None:
+        storage_val = target_storage_url(target_name, root)
+    else:
+        storage_val = get_storage(None)
+    dp = ducklake_data_path(f"{storage_val}/{DUCKLAKE_FILE}")
+    is_s3 = storage_val.startswith("s3://")
+
+    stmts: list[str] = ["INSTALL ducklake; LOAD ducklake;"]
+    if is_s3:
+        if target_name is None:
+            raise ValueError("target_name is required for S3 storage")
+        s3 = target_s3_config(target_name, root)
+        stmts.append("INSTALL httpfs; LOAD httpfs;")
+        stmts.append(
+            f"CREATE SECRET (TYPE s3, "
+            f"KEY_ID '{_sql_escape(s3.access_key_id)}', "
+            f"SECRET '{_sql_escape(s3.secret_access_key)}', "
+            f"ENDPOINT '{_sql_escape(s3.endpoint_host)}', "
+            f"URL_STYLE 'path', REGION 'auto')"
+        )
+
+    opts = [f"DATA_PATH '{_sql_escape(dp)}'", "OVERRIDE_DATA_PATH true"]
+    if read_only:
+        opts.append("READ_ONLY")
+    stmts.append(
+        f"ATTACH 'ducklake:{_sql_escape(str(ducklake_path))}' AS {name} "
+        f"({', '.join(opts)})"
+    )
+    stmts.append(f"USE {name}")
+    return stmts
+
+
 @contextmanager
 def connect(
     *,
-    storage: str | None = None,
     target_name: str | None = None,
     project_dir: Path | None = None,
 ) -> Generator[duckdb.DuckDBPyConnection]:
     """Connect to the DuckLake catalog and return a DuckDB connection.
 
     Opens an in-memory DuckDB connection, loads the DuckLake extension,
-    and ATTACHes the local catalog (`.fdl/ducklake.duckdb`) with the
-    correct `DATA_PATH` and `OVERRIDE_DATA_PATH`.
+    ATTACHes the local catalog (`.fdl/{target}/ducklake.duckdb`) with the
+    correct `DATA_PATH` / `OVERRIDE_DATA_PATH`, and selects the datasource
+    via `USE`.
 
-    When `storage` points to an S3 path, httpfs is loaded and S3 credentials
-    are configured from the target config.
+    For S3 targets, httpfs is loaded and S3 credentials are configured
+    from the target config.
 
     Args:
-        storage: Base path for data files.
-            Defaults to `FDL_STORAGE` env var, then `.fdl`.
-        target_name: Target name for S3 credential resolution.
+        target_name: Target name for storage / S3 credential resolution.
         project_dir: Project directory containing fdl.toml. Defaults to the
             nearest ancestor that contains one.
 
     Yields:
         A DuckDB connection with the DuckLake catalog attached as the
-        dataset name (from `fdl.toml`).
+        dataset name (from `fdl.toml`) and selected via `USE`.
 
     Raises:
-        FileNotFoundError: If `.fdl/ducklake.duckdb` does not exist.
+        FileNotFoundError: If the local catalog file does not exist.
     """
     from fdl.config import (
-        catalog_path,
-        data_path as get_data_path,
-        datasource_name,
         find_project_dir,
         storage as get_storage,
+        target_storage_url,
     )
 
     root = project_dir or find_project_dir()
-    name = datasource_name(root)
 
-    ducklake_path = Path(catalog_path(target_name, root))
-    if not ducklake_path.exists():
-        msg = f"{ducklake_path} not found. Run 'fdl init' or 'fdl pull' first."
-        raise FileNotFoundError(msg)
-
-    if storage is None:
-        storage = get_storage(target_name)
-        data_path = get_data_path(target_name)
+    if target_name is not None:
+        storage_val = target_storage_url(target_name, root)
     else:
-        data_path = ducklake_data_path(f"{storage}/{DUCKLAKE_FILE}")
+        storage_val = get_storage(None)
 
     # Ensure local storage directory exists for data file writes
-    if not storage.startswith("s3://"):
-        Path(data_path).mkdir(parents=True, exist_ok=True)
+    if not storage_val.startswith("s3://"):
+        local_dp = ducklake_data_path(f"{storage_val}/{DUCKLAKE_FILE}")
+        Path(local_dp).mkdir(parents=True, exist_ok=True)
 
     conn = duckdb.connect()
     try:
-        conn.execute("INSTALL ducklake; LOAD ducklake;")
-        if storage.startswith("s3://"):
-            from fdl.config import target_s3_config
-            from fdl.s3 import configure_duckdb_s3
-
-            if not target_name:
-                raise ValueError("target_name is required for S3 storage")
-            configure_duckdb_s3(conn, target_s3_config(target_name, root))
-        conn.execute(f"""
-            ATTACH 'ducklake:{ducklake_path}' AS {name} (
-                DATA_PATH '{data_path}',
-                OVERRIDE_DATA_PATH true
-            )
-        """)
+        for stmt in build_attach_sql(target_name, project_dir=root):
+            conn.execute(stmt)
         yield conn
     finally:
         conn.close()

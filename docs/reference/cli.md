@@ -14,6 +14,7 @@ project. The same lookup is also used by the [Python API](python-api.md).
 | [`sync`](#sync) | Pull, run pipeline, and push in one step |
 | [`run`](#run) | Run a command with injected env vars |
 | [`sql`](#sql) | Execute SQL against the catalog |
+| [`duckdb`](#duckdb) | Launch an interactive DuckDB shell |
 | [`config`](#config) | Get or set configuration |
 | [`serve`](#serve) | Start an HTTP server |
 
@@ -194,6 +195,44 @@ fdl sql default --force "SELECT * FROM cities"
 ```
 
 See [Working with Data](../guide/working-with-data.md) for details on how the catalog connection works and caveats.
+
+## duckdb
+
+Launch an interactive DuckDB shell with the target's DuckLake catalog attached and selected.
+
+```
+fdl duckdb TARGET [--read-only] [--force] [--dry-run] [--duckdb-bin PATH]
+```
+
+| Argument / Option | Description |
+|---|---|
+| `TARGET` | Target name (e.g. `default`) |
+| `--read-only` | Attach the catalog in read-only mode |
+| `--force`, `-f` | Skip stale catalog check |
+| `--dry-run` | Print the duckdb command that would be executed and exit |
+| `--duckdb-bin` | Path to the `duckdb` binary (default: first on PATH) |
+
+fdl resolves the target, performs the [stale catalog check](#stale-catalog-check), then `exec`s into the `duckdb` CLI with `INSTALL ducklake`, `ATTACH`, and `USE` pre-applied via `-cmd`. Because fdl replaces itself with `duckdb`, TTY, signal handling, and the exit code are inherited normally — Ctrl-C, history, and `.exit` work as they do in a plain `duckdb` invocation.
+
+For S3 targets, fdl also loads `httpfs` and issues a `CREATE SECRET` from the target's credentials in `fdl.toml`.
+
+Requires the `duckdb` CLI on `PATH` (or pass `--duckdb-bin`). Install it from [duckdb.org/docs/installation](https://duckdb.org/docs/installation/).
+
+Examples:
+
+```bash
+# Open a shell on the default target
+fdl duckdb default
+
+# Read-only (safe for exploration on shared data)
+fdl duckdb default --read-only
+
+# Inspect the command fdl would run, without launching duckdb
+fdl duckdb default --dry-run
+
+# Use a specific duckdb binary
+fdl duckdb default --duckdb-bin ~/bin/duckdb
+```
 
 ## config
 
