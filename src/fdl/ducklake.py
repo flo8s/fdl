@@ -10,10 +10,28 @@ import duckdb
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
 from fdl.console import console
 
+# DuckLake ATTACH options applied to SQLite catalogs (v0.9.1+).
+#
+# META_JOURNAL_MODE sets journal_mode on both freshly-created and
+# re-attached SQLite catalogs, so v0.9 catalogs still in the default
+# ``delete`` mode auto-migrate to WAL on first attach. BUSY_TIMEOUT is
+# per-connection and must be set on every attach; 5 s waits out the
+# short lock windows that can occur during concurrent writes and avoids
+# surfacing SQLITE_BUSY to callers.
+SQLITE_CATALOG_OPTIONS: tuple[str, ...] = (
+    "META_JOURNAL_MODE 'WAL'",
+    "BUSY_TIMEOUT 5000",
+)
+
 
 def _sql_escape(s: str) -> str:
     """Escape a string for use inside a SQL single-quoted literal."""
     return s.replace("'", "''")
+
+
+def _is_sqlite_catalog(catalog_file: Path) -> bool:
+    """Return True when the path points to an FDL SQLite catalog."""
+    return catalog_file.name == DUCKLAKE_SQLITE
 
 
 def build_attach_sql(
@@ -29,8 +47,13 @@ def build_attach_sql(
       2. (S3 only) INSTALL httpfs; LOAD httpfs;
       3. (S3 only) CREATE SECRET (TYPE s3, ...)
       4. ATTACH 'ducklake:<path>' AS <datasource>
-         (DATA_PATH '<dp>', OVERRIDE_DATA_PATH true[, READ_ONLY])
+         (DATA_PATH '<dp>', OVERRIDE_DATA_PATH true[, READ_ONLY]
+          [, META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000])
       5. USE <datasource>
+
+    The SQLite-specific options (META_JOURNAL_MODE, BUSY_TIMEOUT) are
+    appended whenever the local catalog is SQLite, which covers all v0.9+
+    catalogs and auto-migrates any legacy ``delete``-mode file on attach.
 
     Paths and credentials containing single quotes are SQL-escaped
     (`'` -> `''`). The caller is responsible for any filesystem side
@@ -88,6 +111,8 @@ def build_attach_sql(
     opts = [f"DATA_PATH '{_sql_escape(dp)}'", "OVERRIDE_DATA_PATH true"]
     if read_only:
         opts.append("READ_ONLY")
+    if _is_sqlite_catalog(ducklake_path):
+        opts.extend(SQLITE_CATALOG_OPTIONS)
     stmts.append(
         f"ATTACH 'ducklake:{_sql_escape(str(ducklake_path))}' AS {name} "
         f"({', '.join(opts)})"
@@ -180,7 +205,8 @@ def init_ducklake(
     conn.execute(f"""
         ATTACH 'ducklake:{catalog_file}' AS {datasource} (
             DATA_PATH '{data_path}',
-            META_TYPE 'sqlite'
+            META_TYPE 'sqlite',
+            {', '.join(SQLITE_CATALOG_OPTIONS)}
         )
     """)
     conn.close()
@@ -218,10 +244,12 @@ def _convert_ducklake_catalog(
         if src_type == "sqlite" or dst_type == "sqlite":
             conn.execute("INSTALL sqlite; LOAD sqlite;")
 
-        meta_opt = f", META_TYPE '{dst_type}'"
+        dst_opts = [f"DATA_PATH '{data_path}'", f"META_TYPE '{dst_type}'"]
+        if dst_type == "sqlite":
+            dst_opts.extend(SQLITE_CATALOG_OPTIONS)
         conn.execute(
             f"ATTACH 'ducklake:{tmp_file}' AS {DST} "
-            f"(DATA_PATH '{data_path}'{meta_opt})"
+            f"({', '.join(dst_opts)})"
         )
         conn.execute(f"DETACH {DST}")
 
