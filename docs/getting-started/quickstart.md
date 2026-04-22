@@ -29,7 +29,7 @@ Target URL [~/.local/share/fdl]:
 - Public URL defaults to `http://localhost:4001` — matches the port `fdl serve` uses, so your catalog works immediately for local HTTP access
 - Target URL defaults to `~/.local/share/fdl` — a central location where pushed datasets accumulate across projects
 
-For S3-compatible storage deployment, set `--public-url` to your public endpoint at init time. Public URL is baked into the catalog and cannot be changed later — see [Known Issues](../resources/known-issues.md#data_path-is-fixed-at-init-time) for details.
+For S3-compatible storage deployment, set `--public-url` to your public endpoint at init time. You can change `public_url` later via `fdl config`; the next `fdl push` will rewrite `data_path` inside the shipped catalog to match.
 
 This creates `fdl.toml` (project config with target settings) and a `.fdl/{target}/` directory containing the DuckLake catalog.
 
@@ -50,7 +50,7 @@ fdl sql default "INSERT INTO world_cities VALUES
     ('Osaka', 'Japan', 2800000)"
 ```
 
-`fdl sql` writes data directly to the target (`~/.local/share/fdl/my_dataset/` by default). The table definition is stored in the catalog (`.fdl/{target}/ducklake.duckdb`) and the row data is written as Parquet files to the target storage.
+`fdl sql` writes data directly to the target (`~/.local/share/fdl/my_dataset/` by default). The table definition is stored in the catalog (`.fdl/{target}/ducklake.sqlite`) and the row data is written as Parquet files to the target storage.
 
 Verify the data:
 

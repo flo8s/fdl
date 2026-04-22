@@ -3,26 +3,21 @@
 [dlt](https://dlthub.com/) (data load tool) is a Python library for building data pipelines.
 fdl supports using dlt as a data loading backend with DuckLake.
 
-## Why SQLite Catalog?
+## Catalog compatibility
 
-DuckLake supports two catalog backends: DuckDB and SQLite.
-When using dlt, the SQLite catalog is required.
+As of v0.9, fdl always stores the local catalog as SQLite (`.fdl/{target}/ducklake.sqlite`). dlt manages its own DuckDB connection internally and cannot share a DuckDB-based catalog, so SQLite is what lets dlt and fdl (plus `fdl sql`) touch the same catalog from separate processes.
 
-dlt manages its own DuckDB connection internally and cannot share a DuckDB-based catalog. SQLite works as an external file that both dlt and DuckDB can access independently.
-
-See [dlt DuckLake catalog configuration](https://dlthub.com/docs/dlt-ecosystem/destinations/ducklake#configure-catalog) for details.
-
-The SQLite catalog is only used during development. `fdl push` automatically converts it to DuckDB format for distribution.
+The SQLite catalog is only used during development. `fdl push` converts it to DuckDB format for distribution. See [dlt DuckLake catalog configuration](https://dlthub.com/docs/dlt-ecosystem/destinations/ducklake#configure-catalog) for the dlt side of the setup.
 
 ## Setup
 
-### 1. Initialize with --sqlite
+### 1. Initialize the project
 
 ```bash
-fdl init my_dataset --sqlite
+fdl init my_dataset
 ```
 
-This creates `.fdl/{target}/ducklake.sqlite` instead of `.fdl/{target}/ducklake.duckdb`.
+This creates `.fdl/{target}/ducklake.sqlite`.
 
 ### 2. Configure dlt destination
 
@@ -59,4 +54,4 @@ fdl run default -- python pipeline.py
 fdl push default
 ```
 
-The SQLite catalog is automatically converted to DuckDB during push.
+The SQLite catalog is converted to DuckDB during push.

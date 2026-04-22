@@ -23,7 +23,7 @@ project. The same lookup is also used by the [Python API](python-api.md).
 Initialize a new project. Creates `fdl.toml`, the `.fdl/` directory, and a DuckLake catalog.
 
 ```
-fdl init [NAME] [--public-url URL] [--target-url URL] [--target-name NAME] [--sqlite]
+fdl init [NAME] [--public-url URL] [--target-url URL] [--target-name NAME]
 ```
 
 | Argument / Option | Description |
@@ -32,14 +32,13 @@ fdl init [NAME] [--public-url URL] [--target-url URL] [--target-name NAME] [--sq
 | `--public-url` | Public URL for dataset access (prompted if omitted) |
 | `--target-url` | Target URL for push/pull (prompted if omitted) |
 | `--target-name` | Target name (prompted if omitted, default: `default`) |
-| `--sqlite` | Use SQLite catalog (required for [dlt integration](../integrations/dlt.md)) |
 
 When flags are omitted, you'll be prompted interactively.
 
 Generated files:
 
 - `fdl.toml` — Project config (with target settings)
-- `.fdl/{target}/ducklake.duckdb` — DuckLake catalog (or `.fdl/{target}/ducklake.sqlite`)
+- `.fdl/{target}/ducklake.sqlite` — Local DuckLake catalog (SQLite, so multiple processes can read/write concurrently)
 
 On failure, `fdl.toml` and `.fdl/` are automatically rolled back.
 
@@ -72,7 +71,7 @@ fdl push TARGET [--force]
 
 Pushes the DuckLake catalog (`ducklake.duckdb`) and `fdl.toml` to the target. Data files are not included — they are written directly to the target via `fdl run` or `fdl sql`.
 
-SQLite catalogs are automatically converted to DuckDB during push.
+The local catalog is SQLite; push converts it to DuckDB format (the distribution format) before upload. Push also updates `ducklake_metadata.data_path` in the shipped catalog to match the current `public_url` in `fdl.toml`, so changing `public_url` and running `fdl push` is sufficient to redeploy at a new origin. Pull reverses the conversion, converting the downloaded DuckDB back to SQLite locally.
 
 ### Conflict detection (S3 targets)
 
