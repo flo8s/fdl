@@ -1,6 +1,60 @@
 # CHANGELOG
 
 
+## v0.9.2 (2026-04-22)
+
+### Bug Fixes
+
+- Enable SQLite WAL mode and busy timeout on catalog attach
+  ([`91e036a`](https://github.com/flo8s/fdl/commit/91e036a6e7b6e1aa7888ddc774663785fb681a4b))
+
+Pass META_JOURNAL_MODE 'WAL' and BUSY_TIMEOUT 5000 as DuckLake ATTACH options for every SQLite
+  catalog. META_JOURNAL_MODE is honored both on catalog creation and on re-attach, so v0.9 catalogs
+  still in the default delete journal mode auto-migrate to WAL on the next FDL command. BUSY_TIMEOUT
+  is per-connection and waits out the short lock windows that occur during concurrent writes,
+  avoiding SQLITE_BUSY surfaces.
+
+This finishes the v0.9 "local catalog is SQLite" switch: reads (fdl serve) and writes (fdl sql) no
+  longer block each other, which was the original motivation for moving off DuckDB's exclusive file
+  lock.
+
+### Chores
+
+- Sync uv.lock with current package version
+  ([`5b4de27`](https://github.com/flo8s/fdl/commit/5b4de27a1a27b81813d95cd1fb2b8be813670eab))
+
+### Documentation
+
+- **dagster**: Rewrite integration guide around FDLResource and pool-based serialization
+  ([`c8bf3d7`](https://github.com/flo8s/fdl/commit/c8bf3d7e416ba54c6d574a526e72712f7ec759f4))
+
+Replace the pass-through ConfigurableResource example with an FDLResource exposing pull(), push(),
+  and a get_connection() context manager that auto-pulls on entry and auto-pushes on successful
+  exit. Assets now only describe the catalog transformation. Add a short section pointing S3-target
+  users at Dagster concurrency pools (default_limit: 1) to avoid ETag races on parallel pushes. Drop
+  the subprocess-style fdl.run example since Dagster prefers direct Python calls.
+
+### Testing
+
+- Pin regression guards for the pull review fixes
+  ([`b8ceb9a`](https://github.com/flo8s/fdl/commit/b8ceb9a6014cb0436086b1e80ca9c0f69bf67964))
+
+- test_pull_preserves_etag_when_conversion_fails: monkeypatches convert_duckdb_to_sqlite to raise,
+  then verifies meta.json still holds the pre-pull ETag so the next pull retries instead of falsely
+  reporting "Already up to date". - test_run_errors_when_target_has_no_catalog: additionally asserts
+  that the misleading "pulled from <target>" log line does not appear above the catalog-missing
+  error when the remote is empty.
+
+- Pin WAL mode regression guards for SQLite catalogs
+  ([`9ebe304`](https://github.com/flo8s/fdl/commit/9ebe3047083f6d799639da4be6edd27900671b63))
+
+Assert journal_mode=wal on: - freshly created catalog from fdl init - sqlite catalog produced by the
+  DuckDB -> SQLite conversion path - legacy v0.9 catalog forced back to delete mode, after any FDL
+  command attaches it
+
+Also assert that build_attach_sql() emits META_JOURNAL_MODE and BUSY_TIMEOUT for SQLite catalogs.
+
+
 ## v0.9.1 (2026-04-22)
 
 ### Bug Fixes
