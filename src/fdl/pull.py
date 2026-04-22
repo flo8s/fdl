@@ -67,6 +67,13 @@ def pull_if_needed(
         return None
 
     do_pull(resolved, target, target_dir, datasource, project_dir)
+    # A remote with nothing to serve leaves the target dir empty; in that case
+    # do not claim a pull happened, so the caller can surface "no catalog".
+    if not (
+        (target_dir / DUCKLAKE_FILE).exists()
+        or (target_dir / DUCKLAKE_SQLITE).exists()
+    ):
+        return None
     return reason
 
 
@@ -179,15 +186,19 @@ def fetch_from_s3(
     )
 
     root = project_dir or find_project_dir()
+
+    # Convert before recording the ETag: a failure here (e.g. corrupt catalog,
+    # disk full) must leave the previous ETag intact so the next pull retries
+    # rather than reporting "Already up to date" against a missing sqlite.
+    if found:
+        _convert_downloaded_catalog(dist_dir, root, target_name)
+
     state_path = root / fdl_target_dir(target_name) / META_JSON
     etag = _head_catalog_etag(client, bucket, f"{datasource}/{DUCKLAKE_FILE}")
     if etag is None:
         state_path.unlink(missing_ok=True)
     else:
         write_remote_etag(state_path, etag)
-
-    if found:
-        _convert_downloaded_catalog(dist_dir, root, target_name)
 
     return found
 

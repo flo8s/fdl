@@ -209,6 +209,7 @@ def _convert_ducklake_catalog(
         tmp_file,
         dst_file.with_name(dst_file.name + ".tmp.wal"),
         dst_file.with_name(dst_file.name + ".tmp-wal"),
+        dst_file.with_name(dst_file.name + ".tmp-shm"),
         dst_file.with_name(dst_file.name + ".tmp-journal"),
     ]
     try:
