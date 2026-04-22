@@ -170,7 +170,7 @@ fdl sql TARGET QUERY [--force]
 | `QUERY` | SQL query to execute |
 | `--force`, `-f` | Skip stale catalog check |
 
-Requires a local catalog at `.fdl/{target}/ducklake.sqlite` (or the legacy `ducklake.duckdb`). Run `fdl init` or `fdl pull TARGET` first if it is missing — `fdl sql` does not auto-initialize.
+Requires a local catalog at `.fdl/{target}/ducklake.sqlite`. Run `fdl init` or `fdl pull TARGET` first if it is missing — `fdl sql` does not auto-initialize.
 
 ### Stale catalog check
 

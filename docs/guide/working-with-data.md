@@ -46,7 +46,7 @@ The pipeline command receives these environment variables:
 |---|---|
 | `FDL_STORAGE` | Target storage path (`{target_url}/{datasource}`) |
 | `FDL_DATA_PATH` | Parquet data files directory (`{FDL_STORAGE}/ducklake.duckdb.files/`) |
-| `FDL_CATALOG` | Local catalog file path (SQLite; `.duckdb` still recognized for backward compat) |
+| `FDL_CATALOG` | Local catalog file path |
 | `FDL_S3_ENDPOINT` | S3 endpoint URL (S3 targets only) |
 | `FDL_S3_ACCESS_KEY_ID` | S3 access key (S3 targets only) |
 | `FDL_S3_SECRET_ACCESS_KEY` | S3 secret key (S3 targets only) |
