@@ -27,6 +27,8 @@ def do_push(
     from fdl.config import datasource_name, find_project_dir, resolve_target
     from fdl.ducklake import convert_sqlite_to_duckdb
 
+    from fdl.config import target_public_url
+
     dataset_dir = project_dir or find_project_dir()
     dist_dir = dataset_dir / fdl_target_dir(target)
     datasource = datasource_name(dataset_dir)
@@ -34,6 +36,10 @@ def do_push(
     resolved = resolve_target(target, dataset_dir)
     console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
     convert_sqlite_to_duckdb(dataset_dir, target)
+
+    pub = target_public_url(target, dataset_dir)
+    if pub:
+        _rewrite_catalog_data_path(dist_dir / DUCKLAKE_FILE, datasource, pub)
 
     if resolved.startswith("s3://"):
         from fdl.config import target_s3_config
@@ -47,6 +53,32 @@ def do_push(
         )
     else:
         push_to_local(Path(resolved), dist_dir, datasource, dataset_dir)
+
+
+def _rewrite_catalog_data_path(
+    duckdb_file: Path, datasource: str, public_url: str,
+) -> None:
+    """Update ``ducklake_metadata.data_path`` in ``duckdb_file`` to match ``public_url``.
+
+    DuckLake records DATA_PATH at catalog creation time and has no official
+    API to change it. This rewrite runs on the DuckDB copy produced by
+    :func:`convert_sqlite_to_duckdb` so the shipped catalog always matches
+    the current ``public_url`` in fdl.toml. The local SQLite catalog is not
+    touched; a crash mid-push leaves local state intact.
+    """
+    import duckdb
+
+    from fdl import ducklake_data_path
+
+    expected = ducklake_data_path(f"{public_url}/{datasource}/{DUCKLAKE_FILE}")
+    conn = duckdb.connect(str(duckdb_file))
+    try:
+        conn.execute(
+            "UPDATE ducklake_metadata SET value = ? WHERE key = 'data_path'",
+            [expected],
+        )
+    finally:
+        conn.close()
 
 
 def push_to_local(
