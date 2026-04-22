@@ -123,6 +123,47 @@ def test_pull_saves_etag_to_local_state(s3_project, moto_s3):
     assert saved["remote_etag"] == head["ETag"]
 
 
+def test_pull_preserves_etag_when_conversion_fails(s3_project, moto_s3, monkeypatch):
+    """Failed DuckDB->SQLite conversion must not update the stored ETag.
+
+    Regression guard: fetch_from_s3 used to record the new ETag before
+    running the conversion. A crash mid-conversion left the local
+    ducklake.sqlite gone and meta.json bumped to the new remote ETag, so
+    the next fdl pull reported "Already up to date" and the project was
+    stuck on a DuckDB-shaped local catalog (violating the SQLite-only
+    contract dlt relies on).
+    """
+    import duckdb
+
+    cli = CliRunner()
+    cli.invoke(app, ["push", "default"])
+
+    # Change the remote so its ETag diverges from the one we just stored.
+    local_duckdb = s3_project / ".fdl" / "default" / "ducklake.duckdb"
+    conn = duckdb.connect(str(local_duckdb))
+    conn.execute(
+        "UPDATE ducklake_metadata SET value = 'external' WHERE key = 'created_by'"
+    )
+    conn.close()
+    moto_s3.upload_file(str(local_duckdb), BUCKET, "test_ds/ducklake.duckdb")
+
+    state_path = s3_project / FDL_DIR / "default" / META_JSON
+    etag_before = json.loads(state_path.read_text())["remote_etag"]
+
+    # Break the conversion step.
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated conversion failure")
+
+    monkeypatch.setattr("fdl.ducklake.convert_duckdb_to_sqlite", _boom)
+
+    result = cli.invoke(app, ["pull", "default"])
+    assert result.exit_code != 0
+
+    # ETag must still point at the pre-pull value, so the next pull retries.
+    etag_after = json.loads(state_path.read_text())["remote_etag"]
+    assert etag_after == etag_before
+
+
 def test_pull_then_push_succeeds_after_external_change(s3_project, moto_s3):
     """After a conflict, pull resyncs state so the next push succeeds.
 

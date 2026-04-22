@@ -166,6 +166,10 @@ def test_run_errors_when_target_has_no_catalog(fdl_project_dir: Path):
     assert result.exit_code != 0
     assert "fdl init" in result.output
     assert "fdl pull" in result.output
+    # Regression guard: pull_if_needed used to return "No local catalog" even
+    # when the pull did not actually materialize one, causing a misleading
+    # "pulled from <target>" log line right above the error.
+    assert "pulled from" not in result.output
 
 
 def test_run_reads_command_from_toml(fdl_project_dir: Path):
