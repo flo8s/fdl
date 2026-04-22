@@ -43,7 +43,7 @@ my_dataset:
         s3_endpoint: "{{ env_var('FDL_S3_ENDPOINT_HOST', '') }}"
         s3_region: auto
       attach:
-        - path: "ducklake:{{ env_var('FDL_CATALOG_URL') }}"
+        - path: "ducklake:{{ env_var('FDL_CATALOG_PATH') }}"
           alias: my_dataset
           is_ducklake: true
           options:
@@ -51,13 +51,18 @@ my_dataset:
             OVERRIDE_DATA_PATH: true
 ```
 
+The DuckLake extension's ATTACH form is `ducklake:<path>` (a bare filesystem
+path, not a SQLAlchemy URL), so use `FDL_CATALOG_PATH` here. `FDL_CATALOG_URL`
+is the right variable for clients like dlt that expect `sqlite:///...`.
+
 ### Environment Variables
 
 `fdl run` automatically injects these variables:
 
 | Variable | Description |
 |----------|-------------|
-| `FDL_CATALOG_URL` | DuckLake catalog connection URL (`sqlite:///<abs>`) |
+| `FDL_CATALOG_PATH` | Local SQLite catalog file path (used by `ducklake:<path>` ATTACH) |
+| `FDL_CATALOG_URL` | DuckLake catalog SQLAlchemy URL (`sqlite:///<abs>`) — for dlt etc. |
 | `FDL_DATA_URL` | Parquet data files directory (URL or local path) |
 | `FDL_S3_ACCESS_KEY_ID` | S3 access key (S3 targets only) |
 | `FDL_S3_SECRET_ACCESS_KEY` | S3 secret key (S3 targets only) |
