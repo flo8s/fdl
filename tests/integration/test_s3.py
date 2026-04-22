@@ -93,18 +93,18 @@ def test_first_push_rejected_when_remote_already_exists(s3_project, moto_s3):
 
 
 def test_pull_restores_catalog_from_s3(s3_project, moto_s3):
-    """fdl pull downloads catalog from S3."""
+    """fdl pull downloads DuckDB from S3 and converts it to SQLite locally."""
     cli = CliRunner()
     cli.invoke(app, ["push", "default"])
 
-    # Delete local catalog
+    # Drop everything local so pull_if_needed actually hits the network.
     (s3_project / ".fdl" / "default" / "ducklake.sqlite").unlink()
+    (s3_project / ".fdl" / "default" / "ducklake.duckdb").unlink(missing_ok=True)
 
     result = cli.invoke(app, ["pull", "default"])
     assert result.exit_code == 0, result.output
-    # v0.9 will convert this to SQLite locally in C5; for now a pull just
-    # drops the remote DuckDB file into place.
-    assert (s3_project / ".fdl" / "default" / "ducklake.duckdb").exists()
+    assert (s3_project / ".fdl" / "default" / "ducklake.sqlite").exists()
+    assert not (s3_project / ".fdl" / "default" / "ducklake.duckdb").exists()
 
 
 def test_pull_saves_etag_to_local_state(s3_project, moto_s3):
@@ -124,22 +124,26 @@ def test_pull_saves_etag_to_local_state(s3_project, moto_s3):
 
 
 def test_pull_then_push_succeeds_after_external_change(s3_project, moto_s3):
-    """After a conflict, pull resyncs state so the next push succeeds."""
+    """After a conflict, pull resyncs state so the next push succeeds.
+
+    Uses a small in-place mutation of the DuckDB catalog to produce a valid
+    catalog with a different ETag, simulating another client's push.
+    """
+    import duckdb
+
     cli = CliRunner()
     cli.invoke(app, ["push", "default"])
 
-    # External change invalidates our saved ETag.
-    moto_s3.put_object(
-        Bucket=BUCKET,
-        Key="test_ds/ducklake.duckdb",
-        Body=b"external change",
+    local_duckdb = s3_project / ".fdl" / "default" / "ducklake.duckdb"
+    conn = duckdb.connect(str(local_duckdb))
+    conn.execute(
+        "UPDATE ducklake_metadata SET value = 'external' WHERE key = 'created_by'"
     )
+    conn.close()
+    moto_s3.upload_file(str(local_duckdb), BUCKET, "test_ds/ducklake.duckdb")
 
-    # Without pull, push is rejected.
     assert cli.invoke(app, ["push", "default"]).exit_code != 0
 
-    # Pull resyncs the ETag; subsequent push is accepted (same content, but
-    # the precondition now matches the current remote ETag).
     cli.invoke(app, ["pull", "default"])
     result = cli.invoke(app, ["push", "default"])
     assert result.exit_code == 0, result.output

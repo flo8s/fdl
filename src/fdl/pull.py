@@ -17,18 +17,24 @@ def do_pull(
     project_dir: Path | None = None,
 ) -> None:
     """Pull catalog from a target (S3 or local)."""
+    from fdl.config import find_project_dir
+
+    root = project_dir or find_project_dir()
     if resolved.startswith("s3://"):
         from fdl.config import target_s3_config
         from fdl.s3 import create_s3_client
 
-        s3 = target_s3_config(target, project_dir)
+        s3 = target_s3_config(target, root)
         client = create_s3_client(s3)
         fetch_from_s3(
             client, s3.bucket, dist_dir, datasource,
-            target_name=target, project_dir=project_dir,
+            target_name=target, project_dir=root,
         )
     else:
-        pull_from_local(Path(resolved), dist_dir, datasource)
+        pull_from_local(
+            Path(resolved), dist_dir, datasource,
+            target_name=target, project_dir=root,
+        )
 
 
 def pull_if_needed(
@@ -95,8 +101,11 @@ def pull_from_local(
     source_dir: Path,
     dist_dir: Path,
     datasource: str,
+    *,
+    target_name: str,
+    project_dir: Path,
 ) -> bool:
-    """Copy catalog from a local directory into dist/.
+    """Copy catalog from a local directory into dist/, converting to SQLite.
 
     Returns True if catalog was found. Local targets do not maintain
     conflict-detection state.
@@ -111,6 +120,7 @@ def pull_from_local(
     if src_file.exists():
         console.print(f"  [dim]{datasource}/{DUCKLAKE_FILE}[/dim]")
         shutil.copy2(src_file, dist_dir / DUCKLAKE_FILE)
+        _convert_downloaded_catalog(dist_dir, project_dir, target_name)
 
     return True
 
@@ -176,4 +186,21 @@ def fetch_from_s3(
     else:
         write_remote_etag(state_path, etag)
 
+    if found:
+        _convert_downloaded_catalog(dist_dir, root, target_name)
+
     return found
+
+
+def _convert_downloaded_catalog(
+    dist_dir: Path, project_dir: Path, target_name: str
+) -> None:
+    """Convert the freshly-downloaded ducklake.duckdb to local SQLite format."""
+    from fdl.ducklake import convert_duckdb_to_sqlite
+
+    # Remove any stale sqlite so the conversion isn't short-circuited.
+    sqlite = dist_dir / DUCKLAKE_SQLITE
+    if sqlite.exists():
+        sqlite.unlink()
+    convert_duckdb_to_sqlite(project_dir, target_name)
+    (dist_dir / DUCKLAKE_FILE).unlink(missing_ok=True)

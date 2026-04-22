@@ -96,3 +96,36 @@ def test_pull_from_empty_target_does_not_restore_catalog(fdl_project_dir):
     cli.invoke(app, ["pull", "default"])
     assert not (fdl_project_dir / ".fdl" / "default" / "ducklake.sqlite").exists()
     assert not (fdl_project_dir / ".fdl" / "default" / "ducklake.duckdb").exists()
+
+
+def test_pull_converts_remote_duckdb_to_local_sqlite(fdl_project_dir, tmp_path_factory):
+    """Pull into a freshly-cloned project produces a SQLite-only local layout."""
+    storage = fdl_project_dir / "storage"
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(storage),
+        "--target-name", "default",
+    ])
+    cli.invoke(app, ["sql", "default", "CREATE TABLE t (x INTEGER)"])
+    cli.invoke(app, ["sql", "default", "INSERT INTO t VALUES (7)"])
+    cli.invoke(app, ["push", "default"])
+
+    # Second project that only knows the shared target dir.
+    import shutil
+
+    other = tmp_path_factory.mktemp("other")
+    shutil.copy2(fdl_project_dir / "fdl.toml", other / "fdl.toml")
+
+    import os
+    cwd = os.getcwd()
+    try:
+        os.chdir(other)
+        result = cli.invoke(app, ["pull", "default"])
+    finally:
+        os.chdir(cwd)
+
+    assert result.exit_code == 0, result.output
+    assert (other / ".fdl" / "default" / "ducklake.sqlite").exists()
+    assert not (other / ".fdl" / "default" / "ducklake.duckdb").exists()
