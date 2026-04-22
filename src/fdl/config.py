@@ -108,34 +108,25 @@ def datasource_name(project_dir: Path | None = None) -> str:
 
 
 def storage(target_name: str | None = None) -> str:
-    """FDL_STORAGE: base path for data files (env var or default .fdl/{target})."""
+    """Default base path for data files (``.fdl/{target}``). Internal helper."""
     from fdl import FDL_DIR, fdl_target_dir
 
     base = fdl_target_dir(target_name) if target_name else FDL_DIR
-    return os.environ.get("FDL_STORAGE", str(base))
-
-
-def data_path(target_name: str | None = None) -> str:
-    """FDL_DATA_PATH: path to data files directory."""
-    from fdl import DUCKLAKE_FILE, ducklake_data_path
-
-    return os.environ.get("FDL_DATA_PATH") or ducklake_data_path(
-        f"{storage(target_name)}/{DUCKLAKE_FILE}"
-    )
+    return str(base)
 
 
 def catalog_path(
     target_name: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
-    """FDL_CATALOG: path to the DuckLake catalog file.
+    """FDL_CATALOG_PATH: absolute path to the DuckLake catalog file.
 
     The local catalog is SQLite as of v0.9. If a legacy ``ducklake.duckdb``
     is present without ``ducklake.sqlite``, it is left in place here (the
     migration step in v0.9 handles the conversion elsewhere) and the duckdb
     path is returned so the file remains discoverable until converted.
     """
-    if v := os.environ.get("FDL_CATALOG"):
+    if v := os.environ.get("FDL_CATALOG_PATH"):
         return v
     from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, fdl_target_dir
 
@@ -148,6 +139,63 @@ def catalog_path(
     if duckdb.exists():
         return str(duckdb)
     return str(sqlite)
+
+
+def catalog_url(
+    target_name: str | None = None,
+    project_dir: Path | None = None,
+) -> str:
+    """FDL_CATALOG_URL: DuckLake catalog backend connection URL.
+
+    Derived from :func:`catalog_path`:
+      - ``.sqlite`` -> ``sqlite:///<absolute_posix_path>``
+      - ``.duckdb`` -> ``duckdb:///<absolute_posix_path>`` (legacy fallback)
+    """
+    if v := os.environ.get("FDL_CATALOG_URL"):
+        return v
+    path = Path(catalog_path(target_name, project_dir)).resolve()
+    scheme = "duckdb" if path.suffix == ".duckdb" else "sqlite"
+    return f"{scheme}:///{path.as_posix()}"
+
+
+def data_url(
+    target_name: str | None = None,
+    *,
+    storage_override: str | None = None,
+) -> str:
+    """FDL_DATA_URL: Parquet data files directory.
+
+    Local target: ``.fdl/{target}/ducklake.duckdb.files/``
+    S3    target: ``s3://bucket/{datasource}/ducklake.duckdb.files/``
+    """
+    if v := os.environ.get("FDL_DATA_URL"):
+        return v
+    from fdl import DUCKLAKE_FILE, ducklake_data_path
+
+    storage_val = storage_override or storage(target_name)
+    return ducklake_data_path(f"{storage_val}/{DUCKLAKE_FILE}")
+
+
+def data_bucket_and_prefix(
+    target_name: str,
+    project_dir: Path | None = None,
+) -> tuple[str, str] | None:
+    """Parse (bucket, prefix) from the effective data URL for S3 targets.
+
+    Returns ``None`` for non-S3 targets. The prefix always ends with
+    ``ducklake.duckdb.files/``.
+    """
+    project_dir = project_dir or find_project_dir()
+    resolved = resolve_target(target_name, project_dir)
+    if not resolved.startswith("s3://"):
+        return None
+    from fdl import DUCKLAKE_FILE
+
+    datasource = datasource_name(project_dir)
+    rest = resolved.removeprefix("s3://")
+    bucket, _, top_prefix = rest.partition("/")
+    base_prefix = f"{top_prefix}/{datasource}" if top_prefix else datasource
+    return bucket, f"{base_prefix}/{DUCKLAKE_FILE}.files/"
 
 
 def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":
@@ -179,17 +227,32 @@ def fdl_env_dict(
     storage_override: str | None = None,
     project_dir: Path | None = None,
 ) -> dict[str, str]:
-    """All FDL_* settings as env var dict (for fdl run subprocess)."""
-    from fdl import DUCKLAKE_FILE, ducklake_data_path
+    """All FDL_* settings as env var dict (for fdl run subprocess).
 
-    storage_val = storage_override or storage()
+    Always-present keys:
+      - FDL_CATALOG_URL, FDL_CATALOG_PATH, FDL_DATA_URL
+
+    S3-only keys:
+      - FDL_DATA_BUCKET, FDL_DATA_PREFIX
+      - FDL_S3_ENDPOINT, FDL_S3_ENDPOINT_HOST,
+        FDL_S3_ACCESS_KEY_ID, FDL_S3_SECRET_ACCESS_KEY
+    """
     result = {
-        "FDL_STORAGE": storage_val,
-        "FDL_DATA_PATH": ducklake_data_path(f"{storage_val}/{DUCKLAKE_FILE}"),
-        "FDL_CATALOG": catalog_path(target_name, project_dir),
+        "FDL_CATALOG_URL": catalog_url(target_name, project_dir),
+        "FDL_CATALOG_PATH": str(
+            Path(catalog_path(target_name, project_dir)).resolve()
+        ),
+        "FDL_DATA_URL": data_url(
+            target_name, storage_override=storage_override
+        ),
     }
     if target_name:
         try:
+            parts = data_bucket_and_prefix(target_name, project_dir)
+            if parts is not None:
+                bucket, prefix = parts
+                result["FDL_DATA_BUCKET"] = bucket
+                result["FDL_DATA_PREFIX"] = prefix
             s3 = target_s3_config(target_name, project_dir)
             if s3.endpoint:
                 result["FDL_S3_ENDPOINT"] = s3.endpoint

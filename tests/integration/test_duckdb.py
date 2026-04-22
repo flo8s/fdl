@@ -110,7 +110,7 @@ def test_helper_escapes_single_quote_in_paths(
     quoted_dir.mkdir()
     catalog = quoted_dir / "ducklake.duckdb"
     catalog.touch()
-    monkeypatch.setenv("FDL_CATALOG", str(catalog))
+    monkeypatch.setenv("FDL_CATALOG_PATH", str(catalog))
 
     stmts = build_attach_sql("default")
     attach = next(s for s in stmts if s.startswith("ATTACH "))

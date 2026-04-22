@@ -61,7 +61,7 @@ def build_attach_sql(
 
     Args:
         target_name: Target name from fdl.toml. When ``None``, the storage
-            is resolved from ``FDL_STORAGE`` / default ``.fdl`` (local only).
+            defaults to ``.fdl`` (local only).
         read_only: When ``True``, append ``READ_ONLY`` to the ATTACH options.
         project_dir: Project directory containing fdl.toml. Defaults to the
             nearest ancestor that contains one.

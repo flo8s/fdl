@@ -21,7 +21,7 @@ This creates `.fdl/{target}/ducklake.sqlite`.
 
 ### 2. Configure dlt destination
 
-`fdl run` injects `FDL_CATALOG`, `FDL_DATA_PATH`, and S3 credentials as environment variables. Use `FDL_CATALOG` to configure the dlt destination:
+`fdl run` injects `FDL_CATALOG_URL`, `FDL_DATA_URL`, and S3 credentials as environment variables. Pass them straight into the dlt destination:
 
 ```python
 import os
@@ -31,8 +31,8 @@ from dlt.destinations import ducklake
 pipeline = dlt.pipeline(
     pipeline_name="my_pipeline",
     destination=ducklake(
-        credentials=f"sqlite:///{os.environ['FDL_CATALOG']}",
-        bucket_url=os.environ["FDL_DATA_PATH"],
+        credentials=os.environ["FDL_CATALOG_URL"],
+        bucket_url=os.environ["FDL_DATA_URL"],
         override_data_path=True,
     ),
 )

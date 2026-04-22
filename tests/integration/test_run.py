@@ -2,7 +2,8 @@
 
 Spec (docs/reference/cli.md#run):
   fdl run TARGET -- COMMAND [ARGS...]
-  - Injects FDL_STORAGE, FDL_DATA_PATH, FDL_CATALOG, FDL_S3_* into subprocess
+  - Injects FDL_CATALOG_URL / FDL_CATALOG_PATH / FDL_DATA_URL (always)
+    and FDL_DATA_BUCKET / FDL_DATA_PREFIX / FDL_S3_* (S3 targets) into subprocess
   - Existing environment variables are NOT overwritten
 """
 
@@ -13,8 +14,8 @@ from typer.testing import CliRunner
 from fdl.cli import app
 
 
-def test_fdl_storage_is_injected(fdl_project_dir: Path):
-    """fdl run injects FDL_STORAGE into the subprocess environment."""
+def test_fdl_catalog_path_points_to_local_file(fdl_project_dir: Path):
+    """fdl run injects FDL_CATALOG_PATH as an absolute path to the SQLite file."""
     storage = fdl_project_dir / "storage"
     cli = CliRunner()
     cli.invoke(app, [
@@ -27,16 +28,39 @@ def test_fdl_storage_is_injected(fdl_project_dir: Path):
     env_file = fdl_project_dir / "env_out.txt"
     result = cli.invoke(app, [
         "run", "default", "--",
-        "sh", "-c", f"echo $FDL_STORAGE > {env_file}",
+        "sh", "-c", f"echo $FDL_CATALOG_PATH > {env_file}",
     ])
     assert result.exit_code == 0, result.output
-    content = env_file.read_text().strip()
-    assert str(storage) in content
-    assert "test_ds" in content
+    catalog = env_file.read_text().strip()
+    assert catalog.endswith("ducklake.sqlite")
+    assert Path(catalog).is_absolute()
+    assert Path(catalog).exists()
+
+
+def test_fdl_catalog_url_is_sqlite_scheme(fdl_project_dir: Path):
+    """fdl run injects FDL_CATALOG_URL as a sqlite:///<abs> URL."""
+    storage = fdl_project_dir / "storage"
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(storage),
+        "--target-name", "default",
+    ])
+
+    env_file = fdl_project_dir / "env_out.txt"
+    result = cli.invoke(app, [
+        "run", "default", "--",
+        "sh", "-c", f"echo $FDL_CATALOG_URL > {env_file}",
+    ])
+    assert result.exit_code == 0, result.output
+    url = env_file.read_text().strip()
+    assert url.startswith("sqlite:///")
+    assert url.endswith("/ducklake.sqlite")
 
 
 def test_existing_env_vars_are_not_overwritten(fdl_project_dir: Path, monkeypatch):
-    """Pre-set FDL_STORAGE is preserved, enabling CI/CD pre-configuration."""
+    """Pre-set FDL_DATA_URL is preserved, enabling CI/CD pre-configuration."""
     cli = CliRunner()
     cli.invoke(app, [
         "init", "test_ds",
@@ -45,42 +69,20 @@ def test_existing_env_vars_are_not_overwritten(fdl_project_dir: Path, monkeypatc
         "--target-name", "default",
     ])
 
-    monkeypatch.setenv("FDL_STORAGE", "custom_value")
+    monkeypatch.setenv("FDL_DATA_URL", "custom_value")
     env_file = fdl_project_dir / "env_out.txt"
     result = cli.invoke(app, [
         "run", "default", "--",
-        "sh", "-c", f"echo $FDL_STORAGE > {env_file}",
+        "sh", "-c", f"echo $FDL_DATA_URL > {env_file}",
     ])
     assert result.exit_code == 0, result.output
     assert env_file.read_text().strip() == "custom_value"
 
 
-def test_fdl_catalog_points_to_local_catalog(fdl_project_dir: Path):
-    """fdl run injects FDL_CATALOG pointing to the local SQLite catalog file."""
-    storage = fdl_project_dir / "storage"
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(storage),
-        "--target-name", "default",
-    ])
+def test_fdl_data_url_ends_with_files(fdl_project_dir: Path):
+    """fdl run injects FDL_DATA_URL derived from target storage.
 
-    env_file = fdl_project_dir / "env_out.txt"
-    result = cli.invoke(app, [
-        "run", "default", "--",
-        "sh", "-c", f"echo $FDL_CATALOG > {env_file}",
-    ])
-    assert result.exit_code == 0, result.output
-    catalog = env_file.read_text().strip()
-    assert catalog.endswith("ducklake.sqlite")
-    assert Path(catalog).exists()
-
-
-def test_fdl_data_path_ends_with_files(fdl_project_dir: Path):
-    """fdl run injects FDL_DATA_PATH derived from target storage.
-
-    Spec: FDL_DATA_PATH = {FDL_STORAGE}/ducklake.duckdb.files/
+    Spec: FDL_DATA_URL = {target_storage}/ducklake.duckdb.files/
     """
     storage = fdl_project_dir / "storage"
     cli = CliRunner()
@@ -94,12 +96,12 @@ def test_fdl_data_path_ends_with_files(fdl_project_dir: Path):
     env_file = fdl_project_dir / "env_out.txt"
     result = cli.invoke(app, [
         "run", "default", "--",
-        "sh", "-c", f"echo $FDL_DATA_PATH > {env_file}",
+        "sh", "-c", f"echo $FDL_DATA_URL > {env_file}",
     ])
     assert result.exit_code == 0, result.output
-    data_path = env_file.read_text().strip()
-    assert data_path.endswith("ducklake.duckdb.files/")
-    assert str(storage) in data_path
+    data_url = env_file.read_text().strip()
+    assert data_url.endswith("ducklake.duckdb.files/")
+    assert str(storage) in data_url
 
 
 def test_missing_separator_fails(fdl_project_dir: Path):

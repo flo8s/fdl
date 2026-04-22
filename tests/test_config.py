@@ -10,7 +10,9 @@ import pytest
 
 from fdl.config import (
     catalog_path,
-    data_path,
+    catalog_url,
+    data_bucket_and_prefix,
+    data_url,
     datasource_name,
     ducklake_url,
     fdl_env_dict,
@@ -102,31 +104,15 @@ def test_datasource_name_without_toml_raises(fdl_project_dir):
 
 
 # ---------------------------------------------------------------------------
-# storage / data_path / catalog_path
-# Spec: FDL_* env vars with defaults. catalog_path auto-detects sqlite/duckdb.
+# storage / catalog_path / catalog_url / data_url / data_bucket_and_prefix
+# Spec: internal default helpers + env-var overridable FDL_* resolvers.
+#        catalog_path auto-detects sqlite/duckdb.
 # ---------------------------------------------------------------------------
 
 
 def test_storage_defaults_to_fdl_dir(fdl_project_dir):
-    """Without FDL_STORAGE env var, defaults to .fdl."""
+    """storage() returns the default .fdl base when no target is given."""
     assert storage() == ".fdl"
-
-
-def test_storage_respects_env_var(fdl_project_dir, monkeypatch):
-    """FDL_STORAGE env var overrides the default."""
-    monkeypatch.setenv("FDL_STORAGE", "/custom/storage")
-    assert storage() == "/custom/storage"
-
-
-def test_data_path_derives_from_storage(fdl_project_dir):
-    """FDL_DATA_PATH = {storage}/ducklake.duckdb.files/ by default."""
-    assert data_path() == ".fdl/ducklake.duckdb.files/"
-
-
-def test_data_path_respects_env_var(fdl_project_dir, monkeypatch):
-    """FDL_DATA_PATH env var overrides the derived path."""
-    monkeypatch.setenv("FDL_DATA_PATH", "/custom/data")
-    assert data_path() == "/custom/data"
 
 
 def test_catalog_path_returns_sqlite_by_default(fdl_project_dir):
@@ -161,9 +147,74 @@ def test_catalog_path_falls_back_to_sqlite_when_none_exist(fdl_project_dir):
 
 
 def test_catalog_path_respects_env_var(fdl_project_dir, monkeypatch):
-    """FDL_CATALOG env var overrides auto-detection."""
-    monkeypatch.setenv("FDL_CATALOG", "/custom/catalog.db")
+    """FDL_CATALOG_PATH env var overrides auto-detection."""
+    monkeypatch.setenv("FDL_CATALOG_PATH", "/custom/catalog.db")
     assert catalog_path() == "/custom/catalog.db"
+
+
+def test_catalog_url_derives_sqlite_scheme(fdl_project_dir):
+    """catalog_url returns sqlite:/// URL when catalog is SQLite."""
+    (fdl_project_dir / ".fdl").mkdir()
+    (fdl_project_dir / ".fdl" / "ducklake.sqlite").touch()
+    url = catalog_url()
+    assert url.startswith("sqlite:///")
+    assert url.endswith("/ducklake.sqlite")
+
+
+def test_catalog_url_derives_duckdb_scheme_for_legacy(fdl_project_dir):
+    """catalog_url returns duckdb:/// URL for legacy DuckDB catalog files."""
+    (fdl_project_dir / ".fdl").mkdir()
+    (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
+    url = catalog_url()
+    assert url.startswith("duckdb:///")
+    assert url.endswith("/ducklake.duckdb")
+
+
+def test_catalog_url_respects_env_var(fdl_project_dir, monkeypatch):
+    """FDL_CATALOG_URL env var overrides derivation."""
+    monkeypatch.setenv("FDL_CATALOG_URL", "sqlite:////custom/x.sqlite")
+    assert catalog_url() == "sqlite:////custom/x.sqlite"
+
+
+def test_data_url_defaults_from_storage(fdl_project_dir):
+    """data_url returns {storage}/ducklake.duckdb.files/ by default."""
+    assert data_url() == ".fdl/ducklake.duckdb.files/"
+
+
+def test_data_url_respects_env_var(fdl_project_dir, monkeypatch):
+    """FDL_DATA_URL env var overrides the derived value."""
+    monkeypatch.setenv("FDL_DATA_URL", "s3://custom/data/")
+    assert data_url() == "s3://custom/data/"
+
+
+def test_data_bucket_and_prefix_for_s3_with_subpath(fdl_project_dir):
+    """S3 target with a sub-path yields (bucket, 'sub/ds/ducklake.duckdb.files/')."""
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("targets.default.url", "s3://my-bucket/prefix", path)
+    assert data_bucket_and_prefix("default", fdl_project_dir) == (
+        "my-bucket",
+        "prefix/ds/ducklake.duckdb.files/",
+    )
+
+
+def test_data_bucket_and_prefix_for_s3_at_bucket_root(fdl_project_dir):
+    """S3 target without sub-path yields (bucket, 'ds/ducklake.duckdb.files/')."""
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("targets.default.url", "s3://my-bucket", path)
+    assert data_bucket_and_prefix("default", fdl_project_dir) == (
+        "my-bucket",
+        "ds/ducklake.duckdb.files/",
+    )
+
+
+def test_data_bucket_and_prefix_for_local_target_is_none(fdl_project_dir):
+    """Local targets return None (no bucket concept)."""
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("targets.default.url", str(fdl_project_dir / "local"), path)
+    assert data_bucket_and_prefix("default", fdl_project_dir) is None
 
 
 # ---------------------------------------------------------------------------
@@ -290,28 +341,34 @@ def test_ducklake_url_raises_without_public_url(fdl_project_dir):
 # ---------------------------------------------------------------------------
 # fdl_env_dict
 # Spec: all FDL_* env vars injected by fdl run.
-#        Local targets get STORAGE/DATA_PATH/CATALOG.
-#        S3 targets also get FDL_S3_*.
+#        Always: FDL_CATALOG_URL, FDL_CATALOG_PATH, FDL_DATA_URL.
+#        S3 only: FDL_DATA_BUCKET, FDL_DATA_PREFIX, FDL_S3_*.
 # ---------------------------------------------------------------------------
 
 
-def test_env_dict_contains_storage_data_path_catalog(fdl_project_dir):
-    """Local target produces correct FDL_STORAGE, FDL_DATA_PATH, FDL_CATALOG.
+def test_env_dict_contains_catalog_url_path_and_data_url(fdl_project_dir):
+    """Local target produces URL + PATH + DATA_URL (always-present keys).
 
-    Spec: FDL_STORAGE = {target_url}/{datasource}
-          FDL_DATA_PATH = {FDL_STORAGE}/ducklake.duckdb.files/
-          FDL_CATALOG = .fdl/{target}/ducklake.sqlite (always SQLite locally)
+    Spec: FDL_CATALOG_URL  = sqlite:///<abs-path>.sqlite
+          FDL_CATALOG_PATH = <abs-path>.sqlite
+          FDL_DATA_URL     = {storage_override}/ducklake.duckdb.files/
     """
     _setup_target(fdl_project_dir, url=str(fdl_project_dir / "storage"))
     storage_val = str(fdl_project_dir / "storage" / "ds")
     env = fdl_env_dict(target_name="default", storage_override=storage_val)
-    assert env["FDL_STORAGE"] == storage_val
-    assert env["FDL_DATA_PATH"] == f"{storage_val}/ducklake.duckdb.files/"
-    assert env["FDL_CATALOG"] == ".fdl/default/ducklake.sqlite"
+    assert env["FDL_CATALOG_URL"].startswith("sqlite:///")
+    assert env["FDL_CATALOG_URL"].endswith("/ducklake.sqlite")
+    assert env["FDL_CATALOG_PATH"].endswith("/.fdl/default/ducklake.sqlite")
+    assert Path(env["FDL_CATALOG_PATH"]).is_absolute()
+    assert env["FDL_DATA_URL"] == f"{storage_val}/ducklake.duckdb.files/"
 
 
-def test_env_dict_includes_s3_vars_for_s3_target(fdl_project_dir):
-    """S3 target additionally includes FDL_S3_* credential keys."""
+def test_env_dict_includes_s3_bucket_prefix_and_creds_for_s3_target(
+    fdl_project_dir,
+):
+    """S3 target adds FDL_DATA_BUCKET / FDL_DATA_PREFIX / FDL_S3_* keys."""
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
     _setup_target(
         fdl_project_dir,
         url="s3://bucket",
@@ -320,19 +377,25 @@ def test_env_dict_includes_s3_vars_for_s3_target(fdl_project_dir):
         s3_secret_access_key="SECRET",
     )
     env = fdl_env_dict(target_name="default", storage_override="s3://bucket/ds")
+    assert env["FDL_DATA_BUCKET"] == "bucket"
+    assert env["FDL_DATA_PREFIX"] == "ds/ducklake.duckdb.files/"
     assert env["FDL_S3_ENDPOINT"] == "https://r2.dev"
     assert env["FDL_S3_ENDPOINT_HOST"] == "r2.dev"
     assert env["FDL_S3_ACCESS_KEY_ID"] == "AKID"
     assert env["FDL_S3_SECRET_ACCESS_KEY"] == "SECRET"
 
 
-def test_env_dict_omits_s3_vars_for_local_target(fdl_project_dir):
-    """Local target does not include FDL_S3_* keys."""
+def test_env_dict_omits_s3_keys_for_local_target(fdl_project_dir):
+    """Local target does not include FDL_DATA_BUCKET / FDL_DATA_PREFIX / FDL_S3_*."""
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
     _setup_target(fdl_project_dir, url=str(fdl_project_dir / "storage"))
     env = fdl_env_dict(
         target_name="default",
         storage_override=str(fdl_project_dir / "storage" / "ds"),
     )
+    assert "FDL_DATA_BUCKET" not in env
+    assert "FDL_DATA_PREFIX" not in env
     assert not any(k.startswith("FDL_S3_") for k in env)
 
 

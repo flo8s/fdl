@@ -205,10 +205,12 @@ def run(
 ) -> int:
     """Run ``command`` with fdl environment variables (CLI: ``fdl run``).
 
-    Auto-pulls the catalog if stale, sets ``FDL_STORAGE`` / ``FDL_DATA_PATH``
-    / ``FDL_CATALOG`` / ``FDL_S3_*`` in the subprocess environment, and runs
-    ``command`` with ``project_dir`` as its working directory (so relative
-    paths resolve against the project root, not the caller's cwd).
+    Auto-pulls the catalog if stale, sets ``FDL_CATALOG_URL`` /
+    ``FDL_CATALOG_PATH`` / ``FDL_DATA_URL`` (and, for S3 targets,
+    ``FDL_DATA_BUCKET`` / ``FDL_DATA_PREFIX`` / ``FDL_S3_*``) in the
+    subprocess environment, and runs ``command`` with ``project_dir`` as
+    its working directory (so relative paths resolve against the project
+    root, not the caller's cwd).
 
     Args:
         target: Target name defined in fdl.toml.

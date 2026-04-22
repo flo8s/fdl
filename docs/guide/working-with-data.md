@@ -42,34 +42,67 @@ Options:
 
 The pipeline command receives these environment variables:
 
-| Variable | Description |
-|---|---|
-| `FDL_STORAGE` | Target storage path (`{target_url}/{datasource}`) |
-| `FDL_DATA_PATH` | Parquet data files directory (`{FDL_STORAGE}/ducklake.duckdb.files/`) |
-| `FDL_CATALOG` | Local catalog file path |
-| `FDL_S3_ENDPOINT` | S3 endpoint URL (S3 targets only) |
-| `FDL_S3_ACCESS_KEY_ID` | S3 access key (S3 targets only) |
-| `FDL_S3_SECRET_ACCESS_KEY` | S3 secret key (S3 targets only) |
-| `FDL_S3_ENDPOINT_HOST` | S3 endpoint without scheme (auto-derived) |
+| Variable | Description | Presence |
+|---|---|---|
+| `FDL_CATALOG_URL` | DuckLake catalog connection URL (`sqlite:///<abs>`) | always |
+| `FDL_CATALOG_PATH` | Local catalog file absolute path | always |
+| `FDL_DATA_URL` | Parquet data files directory (URL for S3, absolute path for local) | always |
+| `FDL_DATA_BUCKET` | S3 bucket (parsed from target URL) | S3 targets only |
+| `FDL_DATA_PREFIX` | S3 object prefix (ends with `ducklake.duckdb.files/`) | S3 targets only |
+| `FDL_S3_ENDPOINT` | S3 endpoint URL | S3 targets only |
+| `FDL_S3_ENDPOINT_HOST` | S3 endpoint without scheme (auto-derived) | S3 targets only |
+| `FDL_S3_ACCESS_KEY_ID` | S3 access key | S3 targets only |
+| `FDL_S3_SECRET_ACCESS_KEY` | S3 secret key | S3 targets only |
+
+The catalog is always a local SQLite file (pulled from the target if remote).
+`FDL_CATALOG_URL` is what DuckLake / dlt / dbt-ducklake expect as a connection string, while `FDL_CATALOG_PATH` is handy for direct file operations (`sqlite3`, backups).
 
 Local target example:
 
 ```bash
-FDL_STORAGE=~/.local/share/fdl/my_dataset
-FDL_DATA_PATH=~/.local/share/fdl/my_dataset/ducklake.duckdb.files/
-FDL_CATALOG=.fdl/{target}/ducklake.sqlite
+FDL_CATALOG_URL=sqlite:////home/you/.fdl/default/ducklake.sqlite
+FDL_CATALOG_PATH=/home/you/.fdl/default/ducklake.sqlite
+FDL_DATA_URL=/home/you/.fdl/default/ducklake.duckdb.files/
 ```
 
 S3 target example:
 
 ```bash
-FDL_STORAGE=s3://my-bucket/my_dataset
-FDL_DATA_PATH=s3://my-bucket/my_dataset/ducklake.duckdb.files/
-FDL_CATALOG=.fdl/{target}/ducklake.sqlite
+FDL_CATALOG_URL=sqlite:////home/you/.fdl/default/ducklake.sqlite
+FDL_CATALOG_PATH=/home/you/.fdl/default/ducklake.sqlite
+FDL_DATA_URL=s3://my-bucket/my_dataset/ducklake.duckdb.files/
+FDL_DATA_BUCKET=my-bucket
+FDL_DATA_PREFIX=my_dataset/ducklake.duckdb.files/
 FDL_S3_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+FDL_S3_ENDPOINT_HOST=YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 FDL_S3_ACCESS_KEY_ID=...
 FDL_S3_SECRET_ACCESS_KEY=...
-FDL_S3_ENDPOINT_HOST=YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+```
+
+### Usage examples
+
+dlt:
+
+```python
+DuckLakeCredentials(
+    catalog=os.environ["FDL_CATALOG_URL"],
+    storage=os.environ["FDL_DATA_URL"],
+)
+```
+
+boto3 (S3 targets):
+
+```python
+s3.list_objects_v2(
+    Bucket=os.environ["FDL_DATA_BUCKET"],
+    Prefix=os.environ["FDL_DATA_PREFIX"],
+)
+```
+
+sqlite3 CLI (catalog inspection):
+
+```bash
+sqlite3 "$FDL_CATALOG_PATH" "SELECT * FROM ducklake_snapshots"
 ```
 
 ### Override behavior

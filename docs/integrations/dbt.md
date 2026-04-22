@@ -43,11 +43,11 @@ my_dataset:
         s3_endpoint: "{{ env_var('FDL_S3_ENDPOINT_HOST', '') }}"
         s3_region: auto
       attach:
-        - path: "ducklake:{{ env_var('FDL_CATALOG') }}"
+        - path: "ducklake:{{ env_var('FDL_CATALOG_URL') }}"
           alias: my_dataset
           is_ducklake: true
           options:
-            DATA_PATH: "{{ env_var('FDL_DATA_PATH') }}"
+            DATA_PATH: "{{ env_var('FDL_DATA_URL') }}"
             OVERRIDE_DATA_PATH: true
 ```
 
@@ -57,11 +57,11 @@ my_dataset:
 
 | Variable | Description |
 |----------|-------------|
-| `FDL_CATALOG` | DuckLake catalog file path |
-| `FDL_DATA_PATH` | Parquet data files directory |
-| `FDL_S3_ACCESS_KEY_ID` | S3 access key |
-| `FDL_S3_SECRET_ACCESS_KEY` | S3 secret key |
-| `FDL_S3_ENDPOINT_HOST` | S3 endpoint hostname |
+| `FDL_CATALOG_URL` | DuckLake catalog connection URL (`sqlite:///<abs>`) |
+| `FDL_DATA_URL` | Parquet data files directory (URL or local path) |
+| `FDL_S3_ACCESS_KEY_ID` | S3 access key (S3 targets only) |
+| `FDL_S3_SECRET_ACCESS_KEY` | S3 secret key (S3 targets only) |
+| `FDL_S3_ENDPOINT_HOST` | S3 endpoint hostname (S3 targets only) |
 
 ## Workflow
 

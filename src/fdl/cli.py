@@ -152,7 +152,8 @@ def run(ctx: typer.Context) -> None:
     """Run a command with fdl environment variables.
 
     \b
-    Sets FDL_STORAGE, FDL_DATA_PATH, FDL_CATALOG, FDL_S3_*:
+    Sets FDL_CATALOG_URL, FDL_CATALOG_PATH, FDL_DATA_URL (and
+    FDL_DATA_BUCKET, FDL_DATA_PREFIX, FDL_S3_* for S3 targets):
       fdl run TARGET
       fdl run TARGET -- COMMAND [ARGS...]
     """
