@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v0.10.1 (2026-04-22)
+
+### Bug Fixes
+
+- Require SQLite local catalog; ignore legacy ducklake.duckdb
+  ([`9b88ccd`](https://github.com/flo8s/fdl/commit/9b88ccd79fd413b01e5cf50795ebb8895024aceb))
+
+catalog_path / catalog_url no longer fall back to ducklake.duckdb. pull_if_needed and do_push key
+  off ducklake.sqlite only, so a legacy v0.8 workspace surfaces the standard "Run 'fdl init' or 'fdl
+  pull <target>' first." error and FDL_CATALOG_URL never leaks duckdb:/// to downstream pipelines.
+
+To migrate a legacy local catalog, run 'fdl pull <target> --force' once the remote has a catalog to
+  pull from. The existing DuckDB->SQLite conversion in _convert_downloaded_catalog handles the
+  rewrite.
+
+- **dbt**: Use FDL_CATALOG_PATH in profiles.yml attach path
+  ([`829a833`](https://github.com/flo8s/fdl/commit/829a833c6f9281ab7f391ecfedfbbc172ac497b9))
+
+The DuckLake extension's ATTACH expects 'ducklake:<bare-path>', not 'ducklake:<sqlalchemy-url>'.
+  Wrapping FDL_CATALOG_URL (sqlite:///...) in ducklake: produced 'ducklake:sqlite:///path' and
+  dbt-duckdb treated that as a filename, raising "No such file or directory" for 'sqlite:////path'.
+
+Use FDL_CATALOG_PATH (the bare absolute path) instead, matching how fdl sql builds its own ATTACH
+  statements in build_attach_sql. FDL_CATALOG_URL remains the right variable for SQLAlchemy-style
+  clients like dlt.
+
+### Chores
+
+- Sync uv.lock with current package version
+  ([`f2db44b`](https://github.com/flo8s/fdl/commit/f2db44bf292fd8c91855990abcb2e7e24cc0306b))
+
+### Continuous Integration
+
+- Trigger docs rebuild after successful release
+  ([`1e09465`](https://github.com/flo8s/fdl/commit/1e09465f8b7f633b6f16666c6efe6817bb3773f4))
+
+The semantic-release step pushes the CHANGELOG.md update using GITHUB_TOKEN, so the downstream
+  docs.yml workflow (which watches CHANGELOG.md) never fires. Kick docs.yml via workflow_dispatch at
+  the end of release.yml; workflow_dispatch is exempt from the GITHUB_TOKEN recursion guard.
+
+
 ## v0.10.0 (2026-04-22)
 
 ### Chores
