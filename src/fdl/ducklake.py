@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal
 
 import duckdb
 
@@ -181,33 +182,53 @@ def init_ducklake(
     conn.close()
 
 
-def convert_sqlite_to_duckdb(dataset_dir: Path, target_name: str) -> None:
-    """Convert SQLite catalog to DuckDB format, replacing ducklake.duckdb."""
-    from fdl import fdl_target_dir
+def _convert_ducklake_catalog(
+    src_file: Path,
+    dst_file: Path,
+    *,
+    src_type: Literal["duckdb", "sqlite"],
+    dst_type: Literal["duckdb", "sqlite"],
+    data_path: str,
+) -> None:
+    """Convert a DuckLake catalog between DuckDB and SQLite formats.
 
-    dist_dir = dataset_dir / fdl_target_dir(target_name)
-    sqlite_file = dist_dir / DUCKLAKE_SQLITE
-    duckdb_file = dist_dir / DUCKLAKE_FILE
-    if not sqlite_file.exists():
-        return
-
-    data_path = ducklake_data_path(str(dist_dir / DUCKLAKE_FILE))
-
-    console.print("Converting DuckLake: SQLite -> DuckDB")
+    Creates an empty destination catalog via the DuckLake extension (so its
+    metadata tables are provisioned), detaches, then raw-attaches both sides
+    to copy rows table-by-table. Writes via a ``.tmp`` file and atomically
+    renames on success. Any ``.tmp``/WAL leftovers are cleaned up in
+    ``finally``.
+    """
     SRC = "src"
     DST = "dst"
-    tmp_file = duckdb_file.with_suffix(".duckdb.tmp")
+    tmp_file = dst_file.with_name(dst_file.name + ".tmp")
+    leftovers = [
+        tmp_file,
+        dst_file.with_name(dst_file.name + ".tmp.wal"),
+        dst_file.with_name(dst_file.name + ".tmp-wal"),
+        dst_file.with_name(dst_file.name + ".tmp-journal"),
+    ]
     try:
         conn = duckdb.connect(":memory:")
-        conn.execute("INSTALL ducklake; LOAD ducklake; INSTALL sqlite; LOAD sqlite;")
+        conn.execute("INSTALL ducklake; LOAD ducklake;")
+        if src_type == "sqlite" or dst_type == "sqlite":
+            conn.execute("INSTALL sqlite; LOAD sqlite;")
 
-        conn.execute(f"""
-            ATTACH 'ducklake:{tmp_file}' AS {DST} (DATA_PATH '{data_path}')
-        """)
-
+        meta_opt = f", META_TYPE '{dst_type}'"
+        conn.execute(
+            f"ATTACH 'ducklake:{tmp_file}' AS {DST} "
+            f"(DATA_PATH '{data_path}'{meta_opt})"
+        )
         conn.execute(f"DETACH {DST}")
-        conn.execute(f"ATTACH '{sqlite_file}' AS {SRC} (TYPE sqlite)")
-        conn.execute(f"ATTACH '{tmp_file}' AS {DST}")
+
+        src_attach = f"ATTACH '{src_file}' AS {SRC}"
+        if src_type == "sqlite":
+            src_attach += " (TYPE sqlite)"
+        conn.execute(src_attach)
+
+        dst_attach = f"ATTACH '{tmp_file}' AS {DST}"
+        if dst_type == "sqlite":
+            dst_attach += " (TYPE sqlite)"
+        conn.execute(dst_attach)
 
         tables = conn.execute(
             "SELECT table_name FROM information_schema.tables "
@@ -223,10 +244,59 @@ def convert_sqlite_to_duckdb(dataset_dir: Path, target_name: str) -> None:
         conn.execute(f"CHECKPOINT {DST}")
         conn.close()
 
-        if duckdb_file.exists():
-            duckdb_file.unlink()
-        tmp_file.rename(duckdb_file)
+        if dst_file.exists():
+            dst_file.unlink()
+        tmp_file.rename(dst_file)
     finally:
-        for f in [tmp_file, tmp_file.with_suffix(".duckdb.tmp.wal")]:
+        for f in leftovers:
             if f.exists():
                 f.unlink()
+
+
+def convert_sqlite_to_duckdb(dataset_dir: Path, target_name: str) -> None:
+    """Convert SQLite catalog to DuckDB format, replacing ducklake.duckdb."""
+    from fdl import fdl_target_dir
+
+    dist_dir = dataset_dir / fdl_target_dir(target_name)
+    sqlite_file = dist_dir / DUCKLAKE_SQLITE
+    duckdb_file = dist_dir / DUCKLAKE_FILE
+    if not sqlite_file.exists():
+        return
+
+    console.print("Converting DuckLake: SQLite -> DuckDB")
+    _convert_ducklake_catalog(
+        sqlite_file,
+        duckdb_file,
+        src_type="sqlite",
+        dst_type="duckdb",
+        data_path=ducklake_data_path(str(duckdb_file)),
+    )
+
+
+def convert_duckdb_to_sqlite(dataset_dir: Path, target_name: str) -> None:
+    """Convert DuckDB catalog to SQLite format, replacing ducklake.sqlite.
+
+    Inverse of :func:`convert_sqlite_to_duckdb`. Used by the v0.8 -> v0.9
+    migration and by ``fdl pull`` after the remote DuckDB catalog has been
+    downloaded locally.
+
+    Idempotent: returns early when there is nothing to do.
+    """
+    from fdl import fdl_target_dir
+
+    dist_dir = dataset_dir / fdl_target_dir(target_name)
+    duckdb_file = dist_dir / DUCKLAKE_FILE
+    sqlite_file = dist_dir / DUCKLAKE_SQLITE
+    if not duckdb_file.exists():
+        return
+    if sqlite_file.exists():
+        return
+
+    console.print("Converting DuckLake: DuckDB -> SQLite")
+    _convert_ducklake_catalog(
+        duckdb_file,
+        sqlite_file,
+        src_type="duckdb",
+        dst_type="sqlite",
+        data_path=ducklake_data_path(str(sqlite_file)),
+    )
