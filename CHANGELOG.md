@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v0.9.1 (2026-04-22)
+
+### Bug Fixes
+
+- Defer pull ETag update until catalog conversion succeeds
+  ([`8d6b950`](https://github.com/flo8s/fdl/commit/8d6b950a2ac4842b757dfeec6ed9bb0443f4cc9e))
+
+Three review findings addressed together:
+
+1. fetch_from_s3 previously wrote the new remote ETag before _convert_downloaded_catalog ran. If the
+  conversion failed (corrupt catalog, disk full, SIGKILL after unlink), the user was left with no
+  local ducklake.sqlite but an updated meta.json, and the next fdl pull would report "Already up to
+  date" while the project was silently back on a DuckDB local catalog. Write the ETag only after the
+  conversion succeeds so failures retry on next pull.
+
+2. pull_if_needed always returned a truthy reason string after do_pull, even when the remote was
+  empty and no catalog was materialized. The caller (fdl run) then printed "No local catalog, pulled
+  from TARGET" immediately before the red "No catalog" error from the catalog-missing guard. Return
+  None when no catalog landed locally.
+
+3. Add ``.tmp-shm`` to the leftovers list in _convert_ducklake_catalog. SQLite WAL mode creates -wal
+  and -shm together; listing -wal without -shm was inconsistent with the stated intent of the
+  cleanup block.
+
+
 ## v0.9.0 (2026-04-22)
 
 ### Documentation
