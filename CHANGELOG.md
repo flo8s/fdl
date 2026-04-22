@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-04-22)
+
+### Chores
+
+- Sync uv.lock with current package version
+  ([`0534f4b`](https://github.com/flo8s/fdl/commit/0534f4b004ba32e105ae5b9d83070218a5856c1b))
+
+### Features
+
+- Redesign FDL_* environment variables around URLs and components
+  ([`40ef01b`](https://github.com/flo8s/fdl/commit/40ef01b1faf8aaf1ecbde92d20002e90328f0bf1))
+
+Replace path-oriented env vars with a URL-first, component-rich layout so pipeline code can pass
+  values straight into DuckLake / dlt / dbt without scheme inference or urlparse.
+
+Always-present keys: FDL_CATALOG_URL sqlite:///<abs>/ducklake.sqlite FDL_CATALOG_PATH absolute path
+  to the catalog file FDL_DATA_URL s3://... (S3) or absolute path (local)
+
+S3-only keys: FDL_DATA_BUCKET parsed from target URL FDL_DATA_PREFIX ends with
+  ducklake.duckdb.files/ FDL_S3_* (unchanged)
+
+BREAKING CHANGE: FDL_STORAGE, FDL_DATA_PATH, and FDL_CATALOG are removed. Use FDL_CATALOG_URL /
+  FDL_CATALOG_PATH / FDL_DATA_URL instead.
+
+### Breaking Changes
+
+- Fdl_storage, FDL_DATA_PATH, and FDL_CATALOG are removed. Use FDL_CATALOG_URL / FDL_CATALOG_PATH /
+  FDL_DATA_URL instead.
+
+
 ## v0.9.2 (2026-04-22)
 
 ### Bug Fixes
