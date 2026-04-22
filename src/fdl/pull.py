@@ -53,11 +53,7 @@ def pull_if_needed(
     - S3 targets: compare the saved remote ETag with the server's
       current ETag via HEAD and pull on mismatch.
     """
-    catalog_exists = (
-        (target_dir / DUCKLAKE_FILE).exists()
-        or (target_dir / DUCKLAKE_SQLITE).exists()
-    )
-    if not catalog_exists:
+    if not (target_dir / DUCKLAKE_SQLITE).exists():
         reason = "No local catalog"
     elif resolved.startswith("s3://"):
         reason = _s3_stale_reason(target_dir, resolved, target, datasource, project_dir)
@@ -67,12 +63,10 @@ def pull_if_needed(
         return None
 
     do_pull(resolved, target, target_dir, datasource, project_dir)
-    # A remote with nothing to serve leaves the target dir empty; in that case
-    # do not claim a pull happened, so the caller can surface "no catalog".
-    if not (
-        (target_dir / DUCKLAKE_FILE).exists()
-        or (target_dir / DUCKLAKE_SQLITE).exists()
-    ):
+    # A remote with nothing to serve leaves the target dir without a SQLite
+    # catalog; in that case do not claim a pull happened, so the caller can
+    # surface "no catalog". Legacy ducklake.duckdb is intentionally ignored.
+    if not (target_dir / DUCKLAKE_SQLITE).exists():
         return None
     return reason
 

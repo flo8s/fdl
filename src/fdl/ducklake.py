@@ -130,7 +130,7 @@ def connect(
     """Connect to the DuckLake catalog and return a DuckDB connection.
 
     Opens an in-memory DuckDB connection, loads the DuckLake extension,
-    ATTACHes the local catalog (`.fdl/{target}/ducklake.duckdb`) with the
+    ATTACHes the local catalog (`.fdl/{target}/ducklake.sqlite`) with the
     correct `DATA_PATH` / `OVERRIDE_DATA_PATH`, and selects the datasource
     via `USE`.
 

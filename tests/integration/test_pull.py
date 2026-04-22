@@ -98,6 +98,65 @@ def test_pull_from_empty_target_does_not_restore_catalog(fdl_project_dir):
     assert not (fdl_project_dir / ".fdl" / "default" / "ducklake.duckdb").exists()
 
 
+def test_legacy_duckdb_only_is_treated_as_missing_catalog(fdl_project_dir):
+    """A legacy ducklake.duckdb without ducklake.sqlite must not masquerade as a catalog.
+
+    Users who upgraded from v0.8 without running 'fdl pull --force' should see
+    the standard 'Run init or pull first' guidance instead of FDL silently
+    operating on the DuckDB file or leaking duckdb:/// into FDL_CATALOG_URL.
+    """
+    storage = fdl_project_dir / "storage"
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(storage),
+        "--target-name", "default",
+    ])
+
+    # Simulate v0.8 workspace: rename the SQLite catalog to legacy DuckDB.
+    target_dir = fdl_project_dir / ".fdl" / "default"
+    (target_dir / "ducklake.sqlite").rename(target_dir / "ducklake.duckdb")
+
+    result = cli.invoke(app, ["sql", "default", "SELECT 1"])
+    assert result.exit_code != 0
+    assert "fdl init" in result.output or "fdl pull" in result.output
+
+
+def test_pull_force_recovers_from_legacy_duckdb(fdl_project_dir):
+    """'fdl pull --force' converts the remote DuckDB catalog into a local SQLite one.
+
+    This is the documented recovery path when a v0.8 workspace carries only
+    ducklake.duckdb: after 'fdl push' has shipped the catalog, 'fdl pull --force'
+    pulls it back and the conversion rebuilds ducklake.sqlite locally.
+    """
+    storage = fdl_project_dir / "storage"
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(storage),
+        "--target-name", "default",
+    ])
+    cli.invoke(app, ["sql", "default", "CREATE TABLE t (x INTEGER)"])
+    cli.invoke(app, ["sql", "default", "INSERT INTO t VALUES (99)"])
+    cli.invoke(app, ["push", "default"])
+
+    # Simulate v0.8 local layout on the client: legacy DuckDB only.
+    target_dir = fdl_project_dir / ".fdl" / "default"
+    (target_dir / "ducklake.sqlite").rename(target_dir / "ducklake.duckdb")
+
+    result = cli.invoke(app, ["pull", "default", "--force"])
+    assert result.exit_code == 0, result.output
+    assert (target_dir / "ducklake.sqlite").exists()
+    assert not (target_dir / "ducklake.duckdb").exists()
+
+    # The recovered workspace is usable end-to-end.
+    result = cli.invoke(app, ["sql", "default", "SELECT x FROM t"])
+    assert result.exit_code == 0, result.output
+    assert "99" in result.output
+
+
 def test_pull_converts_remote_duckdb_to_local_sqlite(fdl_project_dir, tmp_path_factory):
     """Pull into a freshly-cloned project produces a SQLite-only local layout."""
     storage = fdl_project_dir / "storage"

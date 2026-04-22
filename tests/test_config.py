@@ -106,7 +106,7 @@ def test_datasource_name_without_toml_raises(fdl_project_dir):
 # ---------------------------------------------------------------------------
 # storage / catalog_path / catalog_url / data_url / data_bucket_and_prefix
 # Spec: internal default helpers + env-var overridable FDL_* resolvers.
-#        catalog_path auto-detects sqlite/duckdb.
+#        catalog_path is SQLite-only; legacy ducklake.duckdb is ignored.
 # ---------------------------------------------------------------------------
 
 
@@ -115,59 +115,39 @@ def test_storage_defaults_to_fdl_dir(fdl_project_dir):
     assert storage() == ".fdl"
 
 
-def test_catalog_path_returns_sqlite_by_default(fdl_project_dir):
-    """Returns .fdl/ducklake.sqlite when the SQLite catalog exists."""
+def test_catalog_path_returns_sqlite_regardless_of_existence(fdl_project_dir):
+    """catalog_path always points at ducklake.sqlite, even when the file is missing."""
+    assert catalog_path() == ".fdl/ducklake.sqlite"
     (fdl_project_dir / ".fdl").mkdir()
     (fdl_project_dir / ".fdl" / "ducklake.sqlite").touch()
     assert catalog_path() == ".fdl/ducklake.sqlite"
 
 
-def test_catalog_path_returns_duckdb_for_legacy_layout(fdl_project_dir):
-    """Returns .fdl/ducklake.duckdb when only a legacy DuckDB catalog is present.
+def test_catalog_path_ignores_legacy_duckdb(fdl_project_dir):
+    """A stray ducklake.duckdb does not shift catalog_path off the SQLite target.
 
-    The migration step converts this to SQLite before it gets used; this test
-    covers the pre-migration observation only.
+    Regression guard for the v0.8 -> v0.9 migration: the legacy file is not
+    considered a valid local catalog. Users must run 'fdl pull <target> --force'
+    (or fdl init) to recover, which the downstream FileNotFoundError makes clear.
     """
     (fdl_project_dir / ".fdl").mkdir()
     (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
-    assert catalog_path() == ".fdl/ducklake.duckdb"
-
-
-def test_catalog_path_prefers_sqlite_when_both_exist(fdl_project_dir):
-    """When both catalogs exist, SQLite wins."""
-    (fdl_project_dir / ".fdl").mkdir()
-    (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
-    (fdl_project_dir / ".fdl" / "ducklake.sqlite").touch()
-    assert catalog_path() == ".fdl/ducklake.sqlite"
-
-
-def test_catalog_path_falls_back_to_sqlite_when_none_exist(fdl_project_dir):
-    """When no catalog file exists, the fallback is ducklake.sqlite."""
     assert catalog_path() == ".fdl/ducklake.sqlite"
 
 
 def test_catalog_path_respects_env_var(fdl_project_dir, monkeypatch):
-    """FDL_CATALOG_PATH env var overrides auto-detection."""
+    """FDL_CATALOG_PATH env var overrides derivation."""
     monkeypatch.setenv("FDL_CATALOG_PATH", "/custom/catalog.db")
     assert catalog_path() == "/custom/catalog.db"
 
 
-def test_catalog_url_derives_sqlite_scheme(fdl_project_dir):
-    """catalog_url returns sqlite:/// URL when catalog is SQLite."""
-    (fdl_project_dir / ".fdl").mkdir()
-    (fdl_project_dir / ".fdl" / "ducklake.sqlite").touch()
-    url = catalog_url()
-    assert url.startswith("sqlite:///")
-    assert url.endswith("/ducklake.sqlite")
-
-
-def test_catalog_url_derives_duckdb_scheme_for_legacy(fdl_project_dir):
-    """catalog_url returns duckdb:/// URL for legacy DuckDB catalog files."""
+def test_catalog_url_is_always_sqlite_scheme(fdl_project_dir):
+    """catalog_url always returns sqlite:/// (legacy .duckdb is ignored)."""
     (fdl_project_dir / ".fdl").mkdir()
     (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
     url = catalog_url()
-    assert url.startswith("duckdb:///")
-    assert url.endswith("/ducklake.duckdb")
+    assert url.startswith("sqlite:///")
+    assert url.endswith("/ducklake.sqlite")
 
 
 def test_catalog_url_respects_env_var(fdl_project_dir, monkeypatch):

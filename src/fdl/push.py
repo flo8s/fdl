@@ -33,10 +33,7 @@ def do_push(
     dist_dir = dataset_dir / fdl_target_dir(target)
     datasource = datasource_name(dataset_dir)
 
-    if not (
-        (dist_dir / DUCKLAKE_SQLITE).exists()
-        or (dist_dir / DUCKLAKE_FILE).exists()
-    ):
+    if not (dist_dir / DUCKLAKE_SQLITE).exists():
         raise FileNotFoundError(
             f"No catalog for target '{target}'. "
             f"Run 'fdl init' or 'fdl pull {target}' first."

@@ -119,43 +119,30 @@ def catalog_path(
     target_name: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
-    """FDL_CATALOG_PATH: absolute path to the DuckLake catalog file.
+    """FDL_CATALOG_PATH: absolute path to the local SQLite DuckLake catalog.
 
-    The local catalog is SQLite as of v0.9. If a legacy ``ducklake.duckdb``
-    is present without ``ducklake.sqlite``, it is left in place here (the
-    migration step in v0.9 handles the conversion elsewhere) and the duckdb
-    path is returned so the file remains discoverable until converted.
+    The local catalog is always ``ducklake.sqlite``. A legacy ``ducklake.duckdb``
+    in the target directory is ignored; migrate it by running
+    ``fdl pull <target> --force``.
     """
     if v := os.environ.get("FDL_CATALOG_PATH"):
         return v
-    from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, fdl_target_dir
+    from fdl import DUCKLAKE_SQLITE, FDL_DIR, fdl_target_dir
 
     rel = fdl_target_dir(target_name) if target_name else FDL_DIR
     base = (project_dir / rel) if project_dir else rel
-    sqlite = base / DUCKLAKE_SQLITE
-    if sqlite.exists():
-        return str(sqlite)
-    duckdb = base / DUCKLAKE_FILE
-    if duckdb.exists():
-        return str(duckdb)
-    return str(sqlite)
+    return str(base / DUCKLAKE_SQLITE)
 
 
 def catalog_url(
     target_name: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
-    """FDL_CATALOG_URL: DuckLake catalog backend connection URL.
-
-    Derived from :func:`catalog_path`:
-      - ``.sqlite`` -> ``sqlite:///<absolute_posix_path>``
-      - ``.duckdb`` -> ``duckdb:///<absolute_posix_path>`` (legacy fallback)
-    """
+    """FDL_CATALOG_URL: ``sqlite:///<absolute_posix_path>`` for the local catalog."""
     if v := os.environ.get("FDL_CATALOG_URL"):
         return v
     path = Path(catalog_path(target_name, project_dir)).resolve()
-    scheme = "duckdb" if path.suffix == ".duckdb" else "sqlite"
-    return f"{scheme}:///{path.as_posix()}"
+    return f"sqlite:///{path.as_posix()}"
 
 
 def data_url(
