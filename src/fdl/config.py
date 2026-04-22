@@ -107,13 +107,6 @@ def datasource_name(project_dir: Path | None = None) -> str:
     return name
 
 
-def catalog_type(project_dir: Path | None = None) -> str:
-    """Catalog type from fdl.toml ('duckdb' or 'sqlite')."""
-    project_dir = project_dir or find_project_dir()
-    data = _load_toml(project_dir / PROJECT_CONFIG)
-    return data.get("catalog", "duckdb")
-
-
 def storage(target_name: str | None = None) -> str:
     """FDL_STORAGE: base path for data files (env var or default .fdl/{target})."""
     from fdl import FDL_DIR, fdl_target_dir
@@ -135,7 +128,13 @@ def catalog_path(
     target_name: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
-    """FDL_CATALOG: path to the DuckLake catalog file (auto-detect sqlite/duckdb)."""
+    """FDL_CATALOG: path to the DuckLake catalog file.
+
+    The local catalog is SQLite as of v0.9. If a legacy ``ducklake.duckdb``
+    is present without ``ducklake.sqlite``, it is left in place here (the
+    migration step in v0.9 handles the conversion elsewhere) and the duckdb
+    path is returned so the file remains discoverable until converted.
+    """
     if v := os.environ.get("FDL_CATALOG"):
         return v
     from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR, fdl_target_dir
@@ -148,10 +147,7 @@ def catalog_path(
     duckdb = base / DUCKLAKE_FILE
     if duckdb.exists():
         return str(duckdb)
-    # Neither exists: fall back to catalog type from fdl.toml
-    if catalog_type(project_dir) == "sqlite":
-        return str(sqlite)
-    return str(duckdb)
+    return str(sqlite)
 
 
 def target_s3_config(name: str, project_dir: Path | None = None) -> "S3Config":

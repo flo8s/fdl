@@ -107,11 +107,10 @@ def pull_from_local(
 
     dist_dir.mkdir(parents=True, exist_ok=True)
 
-    for name in [DUCKLAKE_FILE, DUCKLAKE_SQLITE]:
-        src_file = src / name
-        if src_file.exists():
-            console.print(f"  [dim]{datasource}/{name}[/dim]")
-            shutil.copy2(src_file, dist_dir / name)
+    src_file = src / DUCKLAKE_FILE
+    if src_file.exists():
+        console.print(f"  [dim]{datasource}/{DUCKLAKE_FILE}[/dim]")
+        shutil.copy2(src_file, dist_dir / DUCKLAKE_FILE)
 
     return True
 
@@ -167,9 +166,6 @@ def fetch_from_s3(
 
     found = _download_file(
         client, bucket, f"{datasource}/{DUCKLAKE_FILE}", dist_dir / DUCKLAKE_FILE
-    )
-    _download_file(
-        client, bucket, f"{datasource}/{DUCKLAKE_SQLITE}", dist_dir / DUCKLAKE_SQLITE
     )
 
     root = project_dir or find_project_dir()

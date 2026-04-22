@@ -23,7 +23,6 @@ def run_command(
     """
     from fdl import fdl_target_dir
     from fdl.config import (
-        catalog_type,
         datasource_name,
         fdl_env_dict,
         find_project_dir,
@@ -50,9 +49,7 @@ def run_command(
 
     # Ensure target catalog exists (initialize on first run)
     pub = target_public_url(target, root) or "http://localhost:4001"
-    init_ducklake(
-        target_dir, root, public_url=pub, sqlite=catalog_type(root) == "sqlite"
-    )
+    init_ducklake(target_dir, root, public_url=pub)
 
     # Build env with all FDL_* values (won't override existing env vars)
     env = os.environ.copy()

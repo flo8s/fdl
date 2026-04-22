@@ -98,10 +98,12 @@ def test_pull_restores_catalog_from_s3(s3_project, moto_s3):
     cli.invoke(app, ["push", "default"])
 
     # Delete local catalog
-    (s3_project / ".fdl" / "default" / "ducklake.duckdb").unlink()
+    (s3_project / ".fdl" / "default" / "ducklake.sqlite").unlink()
 
     result = cli.invoke(app, ["pull", "default"])
     assert result.exit_code == 0, result.output
+    # v0.9 will convert this to SQLite locally in C5; for now a pull just
+    # drops the remote DuckDB file into place.
     assert (s3_project / ".fdl" / "default" / "ducklake.duckdb").exists()
 
 

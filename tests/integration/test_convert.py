@@ -38,7 +38,6 @@ def _init_sqlite_project(root: Path) -> None:
             str(root / "storage"),
             "--target-name",
             "default",
-            "--sqlite",
         ],
     )
     assert result.exit_code == 0, result.output

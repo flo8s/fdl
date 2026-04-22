@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, META_JSON
+from fdl import DUCKLAKE_FILE, META_JSON
 from fdl.config import PROJECT_CONFIG
 from fdl.console import console
 
@@ -59,11 +59,10 @@ def push_to_local(
     dest = output_dir / datasource
     dest.mkdir(parents=True, exist_ok=True)
 
-    for name in [DUCKLAKE_FILE, DUCKLAKE_SQLITE]:
-        src = dist_dir / name
-        if src.exists():
-            console.print(f"  [dim]{datasource}/{name}[/dim]")
-            shutil.copy2(src, dest / name)
+    src = dist_dir / DUCKLAKE_FILE
+    if src.exists():
+        console.print(f"  [dim]{datasource}/{DUCKLAKE_FILE}[/dim]")
+        shutil.copy2(src, dest / DUCKLAKE_FILE)
 
     toml_src = project_dir / PROJECT_CONFIG
     if toml_src.exists():
@@ -173,12 +172,6 @@ def push_to_s3(
         f"{datasource}/{PROJECT_CONFIG}",
         project_dir / PROJECT_CONFIG,
         content_type="application/toml; charset=utf-8",
-    )
-    _upload_if_exists(
-        client,
-        bucket,
-        f"{datasource}/{DUCKLAKE_SQLITE}",
-        dist_dir / DUCKLAKE_SQLITE,
     )
 
     etag = _put_catalog_with_precondition(

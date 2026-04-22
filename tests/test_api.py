@@ -240,31 +240,6 @@ def test_init_rollback_on_failure(
     assert not (fdl_project_dir / FDL_DIR / "default").exists()
 
 
-def test_roundtrip_sqlite_catalog(fdl_project_dir: Path, tmp_path_factory) -> None:
-    """SQLite catalog: init → connect → push (converts to DuckDB) → pull → read."""
-    remote = tmp_path_factory.mktemp("remote")
-    remote.mkdir(parents=True, exist_ok=True)
-    fdl.init("mydata", target_url=str(remote), sqlite=True, project_dir=fdl_project_dir)
-
-    with fdl.connect("default") as conn:
-        conn.execute("CREATE TABLE t (x INTEGER)")
-        conn.execute("INSERT INTO t VALUES (10), (20)")
-
-    fdl.push("default")
-
-    # push converts SQLite → DuckDB; verify DuckDB file exists at the remote
-    assert (remote / "mydata" / "ducklake.duckdb").exists()
-
-    import shutil
-    shutil.rmtree(fdl_project_dir / ".fdl" / "default")
-
-    fdl.pull("default")
-
-    with fdl.connect("default") as conn:
-        rows = conn.execute("SELECT x FROM t ORDER BY x").fetchall()
-    assert rows == [(10,), (20,)]
-
-
 def test_public_api_surface() -> None:
     """__all__ exposes exactly the documented public names."""
     expected = {

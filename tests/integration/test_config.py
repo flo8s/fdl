@@ -59,7 +59,6 @@ def test_no_args_lists_all_settings_with_correct_values(fdl_project_dir: Path):
     result = cli.invoke(app, ["config"])
     assert result.exit_code == 0
     assert "name=test_ds" in result.output
-    assert "catalog=duckdb" in result.output
     assert "targets.default.public_url=http://localhost:4001" in result.output
 
 

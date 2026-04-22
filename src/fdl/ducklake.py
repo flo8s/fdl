@@ -152,10 +152,15 @@ def connect(
 
 
 def init_ducklake(
-    dist_dir: Path, dataset_dir: Path, *, public_url: str, sqlite: bool = False
+    dist_dir: Path, dataset_dir: Path, *, public_url: str
 ) -> None:
-    """Initialize DuckLake catalog (skip if exists)."""
-    catalog_file = dist_dir / (DUCKLAKE_SQLITE if sqlite else DUCKLAKE_FILE)
+    """Initialize DuckLake catalog (skip if exists).
+
+    The local catalog is always SQLite (as of v0.9), which allows concurrent
+    read/write from separate processes. Remote/shipped catalogs remain in
+    DuckDB format; conversion happens in push/pull.
+    """
+    catalog_file = dist_dir / DUCKLAKE_SQLITE
     if catalog_file.exists():
         console.print(f"DuckLake: [dim]{catalog_file}[/dim]")
         return
@@ -164,9 +169,8 @@ def init_ducklake(
 
     datasource = datasource_name(dataset_dir)
     data_path = ducklake_data_path(f"{public_url}/{datasource}/{DUCKLAKE_FILE}")
-    meta_type = "sqlite" if sqlite else "duckdb"
     console.print(
-        f"Creating DuckLake ({meta_type}): {datasource} (DATA_PATH: [dim]{data_path}[/dim])"
+        f"Creating DuckLake: {datasource} (DATA_PATH: [dim]{data_path}[/dim])"
     )
 
     dist_dir.mkdir(parents=True, exist_ok=True)
@@ -176,7 +180,7 @@ def init_ducklake(
     conn.execute(f"""
         ATTACH 'ducklake:{catalog_file}' AS {datasource} (
             DATA_PATH '{data_path}',
-            META_TYPE '{meta_type}'
+            META_TYPE 'sqlite'
         )
     """)
     conn.close()

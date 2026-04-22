@@ -68,9 +68,6 @@ def init(
         None, "--target-url", help="Target URL for push/pull"
     ),
     target_name: str = typer.Option(None, "--target-name", help="Target name"),
-    sqlite: bool = typer.Option(
-        False, help="Use SQLite catalog (for dlt compatibility)"
-    ),
 ) -> None:
     """Initialize a new fdl project."""
     import fdl
@@ -103,7 +100,6 @@ def init(
         target_name=target_name,
         target_url=target_url,
         public_url=public_url,
-        sqlite=sqlite,
         project_dir=dataset_dir,
     )
 

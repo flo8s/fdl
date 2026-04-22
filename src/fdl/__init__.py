@@ -78,12 +78,11 @@ def init(
     target_name: str = "default",
     target_url: str | None = None,
     public_url: str = "http://localhost:4001",
-    sqlite: bool = False,
     project_dir: Path | None = None,
 ) -> None:
     """Initialize an fdl project (CLI: ``fdl init``).
 
-    Writes ``fdl.toml`` and creates ``.fdl/{target_name}/ducklake.duckdb``.
+    Writes ``fdl.toml`` and creates ``.fdl/{target_name}/ducklake.sqlite``.
     On failure, partially created ``fdl.toml`` / ``.fdl/`` are rolled back.
 
     Args:
@@ -92,7 +91,6 @@ def init(
         target_url: Storage URL for the target. Defaults to
             :func:`default_target_url`.
         public_url: Public URL the dataset will be served under.
-        sqlite: Use SQLite catalog instead of DuckDB (for dlt compatibility).
         project_dir: Directory to initialize in. Defaults to ``Path.cwd()``.
 
     Raises:
@@ -125,10 +123,9 @@ def init(
     dist_dir = root / fdl_target_dir(target_name)
     try:
         set_value("name", name, config_path)
-        set_value("catalog", "sqlite" if sqlite else "duckdb", config_path)
         set_value(f"targets.{target_name}.url", target_url, config_path)
         set_value(f"targets.{target_name}.public_url", public_url, config_path)
-        init_ducklake(dist_dir, root, public_url=public_url, sqlite=sqlite)
+        init_ducklake(dist_dir, root, public_url=public_url)
     except Exception:
         if config_path.exists():
             config_path.unlink()

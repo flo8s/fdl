@@ -56,7 +56,7 @@ def test_existing_env_vars_are_not_overwritten(fdl_project_dir: Path, monkeypatc
 
 
 def test_fdl_catalog_points_to_local_catalog(fdl_project_dir: Path):
-    """fdl run injects FDL_CATALOG pointing to the local catalog file."""
+    """fdl run injects FDL_CATALOG pointing to the local SQLite catalog file."""
     storage = fdl_project_dir / "storage"
     cli = CliRunner()
     cli.invoke(app, [
@@ -73,7 +73,7 @@ def test_fdl_catalog_points_to_local_catalog(fdl_project_dir: Path):
     ])
     assert result.exit_code == 0, result.output
     catalog = env_file.read_text().strip()
-    assert catalog.endswith("ducklake.duckdb")
+    assert catalog.endswith("ducklake.sqlite")
     assert Path(catalog).exists()
 
 
@@ -147,8 +147,8 @@ def test_subprocess_exit_code_is_propagated(fdl_project_dir: Path):
     assert result.exit_code == 42
 
 
-def test_fdl_catalog_points_to_sqlite_for_sqlite_project(fdl_project_dir: Path):
-    """fdl run sets FDL_CATALOG to ducklake.sqlite for sqlite projects."""
+def test_run_auto_initializes_sqlite_catalog_for_new_target(fdl_project_dir: Path):
+    """fdl run for a new target auto-creates ducklake.sqlite under that target dir."""
     storage = fdl_project_dir / "storage"
     cli = CliRunner()
     cli.invoke(app, [
@@ -156,30 +156,6 @@ def test_fdl_catalog_points_to_sqlite_for_sqlite_project(fdl_project_dir: Path):
         "--public-url", "http://localhost:4001",
         "--target-url", str(storage),
         "--target-name", "default",
-        "--sqlite",
-    ])
-
-    env_file = fdl_project_dir / "env_out.txt"
-    result = cli.invoke(app, [
-        "run", "default", "--",
-        "sh", "-c", f"echo $FDL_CATALOG > {env_file}",
-    ])
-    assert result.exit_code == 0, result.output
-    catalog = env_file.read_text().strip()
-    assert catalog.endswith("ducklake.sqlite")
-    assert Path(catalog).exists()
-
-
-def test_run_auto_initializes_sqlite_catalog(fdl_project_dir: Path):
-    """fdl run for a new target auto-creates ducklake.sqlite for sqlite projects."""
-    storage = fdl_project_dir / "storage"
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(storage),
-        "--target-name", "default",
-        "--sqlite",
     ])
     # Add a second target
     from fdl.config import set_value

@@ -10,7 +10,6 @@ import pytest
 
 from fdl.config import (
     catalog_path,
-    catalog_type,
     data_path,
     datasource_name,
     ducklake_url,
@@ -130,18 +129,34 @@ def test_data_path_respects_env_var(fdl_project_dir, monkeypatch):
     assert data_path() == "/custom/data"
 
 
-def test_catalog_path_returns_duckdb(fdl_project_dir):
-    """Returns .fdl/ducklake.duckdb when the DuckDB catalog exists."""
+def test_catalog_path_returns_sqlite_by_default(fdl_project_dir):
+    """Returns .fdl/ducklake.sqlite when the SQLite catalog exists."""
+    (fdl_project_dir / ".fdl").mkdir()
+    (fdl_project_dir / ".fdl" / "ducklake.sqlite").touch()
+    assert catalog_path() == ".fdl/ducklake.sqlite"
+
+
+def test_catalog_path_returns_duckdb_for_legacy_layout(fdl_project_dir):
+    """Returns .fdl/ducklake.duckdb when only a legacy DuckDB catalog is present.
+
+    The migration step converts this to SQLite before it gets used; this test
+    covers the pre-migration observation only.
+    """
     (fdl_project_dir / ".fdl").mkdir()
     (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
     assert catalog_path() == ".fdl/ducklake.duckdb"
 
 
 def test_catalog_path_prefers_sqlite_when_both_exist(fdl_project_dir):
-    """When both catalogs exist, SQLite is preferred for dlt compatibility."""
+    """When both catalogs exist, SQLite wins."""
     (fdl_project_dir / ".fdl").mkdir()
     (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
     (fdl_project_dir / ".fdl" / "ducklake.sqlite").touch()
+    assert catalog_path() == ".fdl/ducklake.sqlite"
+
+
+def test_catalog_path_falls_back_to_sqlite_when_none_exist(fdl_project_dir):
+    """When no catalog file exists, the fallback is ducklake.sqlite."""
     assert catalog_path() == ".fdl/ducklake.sqlite"
 
 
@@ -285,14 +300,14 @@ def test_env_dict_contains_storage_data_path_catalog(fdl_project_dir):
 
     Spec: FDL_STORAGE = {target_url}/{datasource}
           FDL_DATA_PATH = {FDL_STORAGE}/ducklake.duckdb.files/
-          FDL_CATALOG = .fdl/{target}/ducklake.duckdb (auto-detected)
+          FDL_CATALOG = .fdl/{target}/ducklake.sqlite (always SQLite locally)
     """
     _setup_target(fdl_project_dir, url=str(fdl_project_dir / "storage"))
     storage_val = str(fdl_project_dir / "storage" / "ds")
     env = fdl_env_dict(target_name="default", storage_override=storage_val)
     assert env["FDL_STORAGE"] == storage_val
     assert env["FDL_DATA_PATH"] == f"{storage_val}/ducklake.duckdb.files/"
-    assert env["FDL_CATALOG"] == ".fdl/default/ducklake.duckdb"
+    assert env["FDL_CATALOG"] == ".fdl/default/ducklake.sqlite"
 
 
 def test_env_dict_includes_s3_vars_for_s3_target(fdl_project_dir):
@@ -319,23 +334,6 @@ def test_env_dict_omits_s3_vars_for_local_target(fdl_project_dir):
         storage_override=str(fdl_project_dir / "storage" / "ds"),
     )
     assert not any(k.startswith("FDL_S3_") for k in env)
-
-
-# --- catalog_type ---
-
-
-def test_catalog_type_defaults_to_duckdb(fdl_project_dir):
-    """catalog_type returns 'duckdb' when fdl.toml has no catalog key."""
-    set_value("name", "ds", fdl_project_dir / "fdl.toml")
-    assert catalog_type(fdl_project_dir) == "duckdb"
-
-
-def test_catalog_type_reads_sqlite(fdl_project_dir):
-    """catalog_type returns 'sqlite' when fdl.toml says catalog = 'sqlite'."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    set_value("catalog", "sqlite", path)
-    assert catalog_type(fdl_project_dir) == "sqlite"
 
 
 # --- target_command ---
