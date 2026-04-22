@@ -21,16 +21,14 @@ def run_command(
     as its working directory so that pipeline tools resolve paths relative to
     the project root.
     """
-    from fdl import fdl_target_dir
+    from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, fdl_target_dir
     from fdl.config import (
         datasource_name,
         fdl_env_dict,
         find_project_dir,
         resolve_target,
-        target_public_url,
         target_storage_url,
     )
-    from fdl.ducklake import init_ducklake
 
     root = project_dir or find_project_dir()
     resolved = resolve_target(target, root)
@@ -47,9 +45,14 @@ def run_command(
     if reason:
         console.print(f"[dim]{reason}, pulled from {target}[/dim]")
 
-    # Ensure target catalog exists (initialize on first run)
-    pub = target_public_url(target, root) or "http://localhost:4001"
-    init_ducklake(target_dir, root, public_url=pub)
+    if not (
+        (target_dir / DUCKLAKE_SQLITE).exists()
+        or (target_dir / DUCKLAKE_FILE).exists()
+    ):
+        raise FileNotFoundError(
+            f"No catalog for target '{target}'. "
+            f"Run 'fdl init' or 'fdl pull {target}' first."
+        )
 
     # Build env with all FDL_* values (won't override existing env vars)
     env = os.environ.copy()

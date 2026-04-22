@@ -158,6 +158,9 @@ def run(ctx: typer.Context) -> None:
     target, cmd = _parse_command_args(ctx.args)
     try:
         raise SystemExit(fdl.run(target, cmd))
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
     except ValueError as e:
         raise typer.BadParameter(_command_missing_hint(str(e))) from None
 
@@ -185,6 +188,9 @@ def sync(
     try:
         raise SystemExit(fdl.sync(target, cmd, force=force))
     except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+    except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
     except ValueError as e:
@@ -281,25 +287,29 @@ def sql(
         )
         raise SystemExit(1)
 
-    with fdl.connect(target) as conn:
-        conn.execute(query)
-        if not conn.description:
-            return
-        columns = [desc[0] for desc in conn.description]
-        rows = conn.fetchall()
-        if not rows:
-            return
-        # Format as table
-        col_widths = [len(c) for c in columns]
-        for row in rows:
-            for i, val in enumerate(row):
-                col_widths[i] = max(col_widths[i], len(str(val)))
-        header = " | ".join(c.ljust(w) for c, w in zip(columns, col_widths))
-        separator = "-+-".join("-" * w for w in col_widths)
-        print(header)
-        print(separator)
-        for row in rows:
-            print(" | ".join(str(v).ljust(w) for v, w in zip(row, col_widths)))
+    try:
+        with fdl.connect(target) as conn:
+            conn.execute(query)
+            if not conn.description:
+                return
+            columns = [desc[0] for desc in conn.description]
+            rows = conn.fetchall()
+            if not rows:
+                return
+            # Format as table
+            col_widths = [len(c) for c in columns]
+            for row in rows:
+                for i, val in enumerate(row):
+                    col_widths[i] = max(col_widths[i], len(str(val)))
+            header = " | ".join(c.ljust(w) for c, w in zip(columns, col_widths))
+            separator = "-+-".join("-" * w for w in col_widths)
+            print(header)
+            print(separator)
+            for row in rows:
+                print(" | ".join(str(v).ljust(w) for v, w in zip(row, col_widths)))
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
 
 
 @app.command()
@@ -340,7 +350,11 @@ def duckdb(
         )
         raise SystemExit(1)
 
-    stmts = build_attach_sql(target, read_only=read_only)
+    try:
+        stmts = build_attach_sql(target, read_only=read_only)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
     argv = [duckdb_bin]
     for s in stmts:
         argv += ["-cmd", s]

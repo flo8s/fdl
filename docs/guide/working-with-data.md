@@ -30,6 +30,8 @@ Processing:
 
 If the command exits with a non-zero code, push is skipped and the exit code is propagated.
 
+If the target has no catalog (locally or remotely), step 1 raises an error pointing at `fdl init` / `fdl pull TARGET` instead of silently creating an empty one.
+
 Options:
 
 | Option | Description |
@@ -44,7 +46,7 @@ The pipeline command receives these environment variables:
 |---|---|
 | `FDL_STORAGE` | Target storage path (`{target_url}/{datasource}`) |
 | `FDL_DATA_PATH` | Parquet data files directory (`{FDL_STORAGE}/ducklake.duckdb.files/`) |
-| `FDL_CATALOG` | Local catalog file path (auto-detects `.duckdb` or `.sqlite`) |
+| `FDL_CATALOG` | Local catalog file path (SQLite; `.duckdb` still recognized for backward compat) |
 | `FDL_S3_ENDPOINT` | S3 endpoint URL (S3 targets only) |
 | `FDL_S3_ACCESS_KEY_ID` | S3 access key (S3 targets only) |
 | `FDL_S3_SECRET_ACCESS_KEY` | S3 secret key (S3 targets only) |
@@ -55,7 +57,7 @@ Local target example:
 ```bash
 FDL_STORAGE=~/.local/share/fdl/my_dataset
 FDL_DATA_PATH=~/.local/share/fdl/my_dataset/ducklake.duckdb.files/
-FDL_CATALOG=.fdl/{target}/ducklake.duckdb
+FDL_CATALOG=.fdl/{target}/ducklake.sqlite
 ```
 
 S3 target example:
@@ -63,7 +65,7 @@ S3 target example:
 ```bash
 FDL_STORAGE=s3://my-bucket/my_dataset
 FDL_DATA_PATH=s3://my-bucket/my_dataset/ducklake.duckdb.files/
-FDL_CATALOG=.fdl/{target}/ducklake.duckdb
+FDL_CATALOG=.fdl/{target}/ducklake.sqlite
 FDL_S3_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 FDL_S3_ACCESS_KEY_ID=...
 FDL_S3_SECRET_ACCESS_KEY=...
@@ -97,6 +99,8 @@ fdl sql default "SELECT * FROM cities"
 `fdl sql` opens a DuckDB connection, ATTACHes the catalog, executes the query, and closes. Data is written directly to the target storage.
 
 Each call is a separate connection — no transactions across multiple `fdl sql` invocations.
+
+The target must already have a catalog (created by `fdl init` or restored by `fdl pull`). `fdl sql` errors out rather than materializing an empty catalog on demand.
 
 ## fdl duckdb
 

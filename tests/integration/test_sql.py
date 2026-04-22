@@ -48,5 +48,26 @@ def test_invalid_sql_fails(fdl_project_dir: Path):
     assert result.exit_code != 0
 
 
+def test_sql_errors_when_target_has_no_catalog(fdl_project_dir: Path):
+    """fdl sql on a target that has never been init'd/pulled surfaces a helpful error."""
+    from fdl.config import set_value
+
+    # Bootstrap just fdl.toml (no .fdl/ yet) so datasource resolution works.
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(fdl_project_dir / "storage"),
+        "--target-name", "default",
+    ])
+    set_value("targets.local.url", str(fdl_project_dir / "other"), fdl_project_dir / "fdl.toml")
+    set_value("targets.local.public_url", "http://localhost:4001", fdl_project_dir / "fdl.toml")
+
+    result = cli.invoke(app, ["sql", "local", "SELECT 1"])
+    assert result.exit_code != 0
+    assert "fdl init" in result.output
+    assert "fdl pull" in result.output
+
+
 # Stale-catalog detection for sql is only performed against S3 targets;
 # see tests/integration/test_s3.py::test_sql_rejects_stale_catalog.

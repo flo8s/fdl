@@ -152,6 +152,8 @@ The subprocess runs with the project root (the directory containing
 script resolve against the project root regardless of where `fdl run` was
 invoked from.
 
+If the target has no local catalog and no remote catalog to pull from, `fdl run` exits with an error telling you to run `fdl init` or `fdl pull TARGET` first. It does not silently create an empty catalog.
+
 See [Working with Data](../guide/working-with-data.md#injected-variables) for details on injected environment variables.
 
 ## sql
@@ -167,6 +169,8 @@ fdl sql TARGET QUERY [--force]
 | `TARGET` | Target name (e.g. `default`) |
 | `QUERY` | SQL query to execute |
 | `--force`, `-f` | Skip stale catalog check |
+
+Requires a local catalog at `.fdl/{target}/ducklake.sqlite` (or the legacy `ducklake.duckdb`). Run `fdl init` or `fdl pull TARGET` first if it is missing — `fdl sql` does not auto-initialize.
 
 ### Stale catalog check
 

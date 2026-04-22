@@ -147,8 +147,8 @@ def test_subprocess_exit_code_is_propagated(fdl_project_dir: Path):
     assert result.exit_code == 42
 
 
-def test_run_auto_initializes_sqlite_catalog_for_new_target(fdl_project_dir: Path):
-    """fdl run for a new target auto-creates ducklake.sqlite under that target dir."""
+def test_run_errors_when_target_has_no_catalog(fdl_project_dir: Path):
+    """fdl run fails with a helpful message when neither init nor pull has produced a catalog."""
     storage = fdl_project_dir / "storage"
     cli = CliRunner()
     cli.invoke(app, [
@@ -157,21 +157,15 @@ def test_run_auto_initializes_sqlite_catalog_for_new_target(fdl_project_dir: Pat
         "--target-url", str(storage),
         "--target-name", "default",
     ])
-    # Add a second target
+    # Add a second target without a catalog in the (empty) remote.
     from fdl.config import set_value
     set_value("targets.local.url", str(storage), fdl_project_dir / "fdl.toml")
     set_value("targets.local.public_url", "http://localhost:4001", fdl_project_dir / "fdl.toml")
 
-    env_file = fdl_project_dir / "env_out.txt"
-    result = cli.invoke(app, [
-        "run", "local", "--",
-        "sh", "-c", f"echo $FDL_CATALOG > {env_file}",
-    ])
-    assert result.exit_code == 0, result.output
-    catalog = env_file.read_text().strip()
-    assert catalog.endswith("ducklake.sqlite")
-    assert Path(catalog).exists()
-    assert "local" in catalog
+    result = cli.invoke(app, ["run", "local", "--", "sh", "-c", "true"])
+    assert result.exit_code != 0
+    assert "fdl init" in result.output
+    assert "fdl pull" in result.output
 
 
 def test_run_reads_command_from_toml(fdl_project_dir: Path):
