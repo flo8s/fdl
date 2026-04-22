@@ -1,6 +1,127 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-04-22)
+
+### Documentation
+
+- Drop legacy duckdb backward-compat notes from cli/working-with-data
+  ([`fa32bd3`](https://github.com/flo8s/fdl/commit/fa32bd3efaaef51c5b0637f11fccce9dc48ef68d))
+
+- Update guides for v0.9 SQLite-only local catalog
+  ([`5daf2e5`](https://github.com/flo8s/fdl/commit/5daf2e5c8a641cfdd9b265490af6970f88fd9e8d))
+
+- configuration.md: drop the ``catalog`` key row and fdl.toml example - reference/cli.md: drop
+  --sqlite from fdl init; describe SQLite-first local layout and push/pull format conversion +
+  data_path rewrite - integrations/dlt.md: SQLite is now the default, so dlt users no longer need
+  --sqlite; simplify the setup steps - getting-started/quickstart.md: ducklake.duckdb ->
+  ducklake.sqlite, and point to the new push-time data_path rewrite instead of the removed
+  known-issue section
+
+### Features
+
+- Convert pulled catalog to local SQLite format
+  ([`402d0d7`](https://github.com/flo8s/fdl/commit/402d0d7d95a0a2131d60a383ad4f159b7d85532a))
+
+After downloading the remote DuckDB catalog, transparently convert it to ``ducklake.sqlite`` so the
+  local workspace is always in the format that supports concurrent read/write. The
+  ``ducklake.duckdb`` copy is removed once the conversion succeeds.
+
+pull_from_local now takes ``target_name`` and ``project_dir`` so the conversion helper can locate
+  the target directory consistently with fetch_from_s3.
+
+- Require existing catalog before fdl push
+  ([`fc7fe92`](https://github.com/flo8s/fdl/commit/fc7fe92d6e803577bfdd3cca78e55ac4938bdb65))
+
+Match the policy already applied to ``fdl run`` / ``fdl sql`` / ``fdl duckdb``: refuse to operate
+  when the target has no local catalog, and point the user at ``fdl init`` or ``fdl pull TARGET``.
+
+Previously push would silently succeed-with-empty-payload: the SQLite -> DuckDB conversion was a
+  no-op, ``_rewrite_catalog_data_path`` then opened a fresh zero-byte DuckDB file via
+  duckdb.connect() and its UPDATE failed with a raw IOException, leaving a stray file behind.
+
+BREAKING CHANGE: ``fdl push`` on an uninitialized target now exits 1 with a helpful error instead of
+  succeeding with an empty upload.
+
+- Require explicit init/pull before fdl run and fdl sql
+  ([`b8c9851`](https://github.com/flo8s/fdl/commit/b8c98515efb6dc3a2d499d7b0394109967dbefa9))
+
+Previously ``fdl run`` silently materialized an empty SQLite catalog when a target had neither local
+  nor remote state, hiding typos in the target name and obscuring the distinction between "data
+  lost" and "data never existed". ``fdl sql`` and ``fdl duckdb`` in the same state would surface the
+  raw FileNotFoundError traceback from DuckLake.
+
+Drop the auto-init branch from ``run_command`` and raise FileNotFoundError with a message pointing
+  at ``fdl init`` or ``fdl pull TARGET``. Have the CLI wrappers (run / sync / sql / duckdb)
+  translate that into a one-line red error and exit 1. Python API callers see the FileNotFoundError
+  directly.
+
+BREAKING CHANGE: ``fdl run`` no longer creates a catalog as a side effect. Users relying on the
+  implicit init must now call ``fdl init`` or ``fdl pull`` before their first run/sync.
+
+- Rewrite data_path on push from public_url
+  ([`f9b8d25`](https://github.com/flo8s/fdl/commit/f9b8d25781784b8f67a2a51caff6caebe7f4f588))
+
+Changing ``public_url`` in fdl.toml used to leave ``ducklake_metadata.data_path`` inside the catalog
+  pointing at the old URL; deployments would then serve data files from the wrong origin unless
+  users ran a manual UPDATE on the catalog. Push now rewrites the DuckDB copy's ``data_path`` to
+  ``public_url/<datasource>/<ducklake.duckdb>.files/`` immediately after the SQLite->DuckDB
+  conversion, so every upload is self-consistent with the current config.
+
+Done on the DuckDB copy only: the local SQLite catalog is untouched, so a mid-push crash leaves
+  local state intact.
+
+Drop the corresponding entry from docs/resources/known-issues.md.
+
+- Store local catalog as SQLite only
+  ([`4718083`](https://github.com/flo8s/fdl/commit/47180837b2c5c2c30062248ced0b8cb5165b3c9c))
+
+The local DuckLake catalog is now always ``ducklake.sqlite``. This lets multiple processes
+  read/write the catalog concurrently (DuckDB file locking rejects a second opener with LockError,
+  while SQLite uses OS-level locking with snapshot isolation).
+
+Remote catalogs continue to ship as ``ducklake.duckdb``: push converts SQLite to DuckDB before
+  upload, and (in a follow-up commit) pull will convert DuckDB back to SQLite locally.
+
+BREAKING CHANGE: the ``--sqlite`` CLI flag, the ``catalog`` key in fdl.toml, and the ``sqlite``
+  keyword argument on ``fdl.init`` are removed. Any ``catalog`` value left in existing fdl.toml is
+  silently ignored.
+
+### Refactoring
+
+- Extract shared ducklake catalog conversion helper
+  ([`3b7ac2e`](https://github.com/flo8s/fdl/commit/3b7ac2e834c88ef2a2cfc721baeb0b2e905234f2))
+
+Introduce _convert_ducklake_catalog as a direction-agnostic core, and rebuild
+  convert_sqlite_to_duckdb as a thin wrapper on top of it. Add convert_duckdb_to_sqlite (inverse
+  direction) for use by the upcoming auto-migration and pull-side conversion paths.
+
+### Testing
+
+- Add concurrent read/write tests for local SQLite catalog
+  ([`12f4d26`](https://github.com/flo8s/fdl/commit/12f4d268ac624030f689a9427f37dc43107e3fba))
+
+Spawn two ``fdl sql`` processes against the same SQLite catalog to verify the v0.9 improvement.
+  Under v0.8's DuckDB catalog the second opener would have failed with a LockError; SQLite's
+  OS-level file locking allows snapshot-isolated concurrency.
+
+- Strengthen concurrency tests with barrier and DuckDB negative case
+  ([`94c399c`](https://github.com/flo8s/fdl/commit/94c399c38669de309bb4a4906d1a3fcf971d0b47))
+
+Spawn two attacher subprocesses behind a ready/go file barrier so that both land inside the ATTACH
+  critical section simultaneously. Add a DuckDB-side test that exercises the v0.8 failure mode
+  (DuckDB's exclusive file lock triggering "Conflicting lock"); if that stops failing, the
+  justification for the v0.9 SQLite switch needs a fresh look.
+
+The previous version only ran ``fdl sql SELECT`` twice with no synchronization, so overlap was
+  incidental and there was no evidence that DuckDB would actually have failed.
+
+### Breaking Changes
+
+- ``fdl push`` on an uninitialized target now exits 1 with a helpful error instead of succeeding
+  with an empty upload.
+
+
 ## v0.8.0 (2026-04-17)
 
 ### Chores
