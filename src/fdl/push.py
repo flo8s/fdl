@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from fdl import DUCKLAKE_FILE, META_JSON
+from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, META_JSON
 from fdl.config import PROJECT_CONFIG
 from fdl.console import console
 
@@ -32,6 +32,15 @@ def do_push(
     dataset_dir = project_dir or find_project_dir()
     dist_dir = dataset_dir / fdl_target_dir(target)
     datasource = datasource_name(dataset_dir)
+
+    if not (
+        (dist_dir / DUCKLAKE_SQLITE).exists()
+        or (dist_dir / DUCKLAKE_FILE).exists()
+    ):
+        raise FileNotFoundError(
+            f"No catalog for target '{target}'. "
+            f"Run 'fdl init' or 'fdl pull {target}' first."
+        )
 
     resolved = resolve_target(target, dataset_dir)
     console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")

@@ -138,6 +138,9 @@ def push(
     except PushConflictError as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
     except ValueError as e:
         raise typer.BadParameter(str(e)) from None
 

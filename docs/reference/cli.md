@@ -71,6 +71,8 @@ fdl push TARGET [--force]
 
 Pushes the DuckLake catalog (`ducklake.duckdb`) and `fdl.toml` to the target. Data files are not included — they are written directly to the target via `fdl run` or `fdl sql`.
 
+Requires an existing local catalog. `fdl push` does not create one; run `fdl init` or `fdl pull TARGET` first.
+
 The local catalog is SQLite; push converts it to DuckDB format (the distribution format) before upload. Push also updates `ducklake_metadata.data_path` in the shipped catalog to match the current `public_url` in `fdl.toml`, so changing `public_url` and running `fdl push` is sufficient to redeploy at a new origin. Pull reverses the conversion, converting the downloaded DuckDB back to SQLite locally.
 
 ### Conflict detection (S3 targets)

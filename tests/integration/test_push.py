@@ -73,6 +73,26 @@ def test_without_init_fails(fdl_project_dir: Path):
     assert result.exit_code != 0
 
 
+def test_push_errors_when_target_has_no_catalog(fdl_project_dir: Path):
+    """fdl push on a target without a catalog surfaces a helpful error."""
+    from fdl.config import set_value
+
+    cli = CliRunner()
+    cli.invoke(app, [
+        "init", "test_ds",
+        "--public-url", "http://localhost:4001",
+        "--target-url", str(fdl_project_dir / "storage"),
+        "--target-name", "default",
+    ])
+    set_value("targets.local.url", str(fdl_project_dir / "other"), fdl_project_dir / "fdl.toml")
+    set_value("targets.local.public_url", "http://localhost:4001", fdl_project_dir / "fdl.toml")
+
+    result = cli.invoke(app, ["push", "local"])
+    assert result.exit_code != 0
+    assert "fdl init" in result.output
+    assert "fdl pull" in result.output
+
+
 def test_unknown_target_fails(fdl_project_dir: Path):
     """fdl push with an unregistered target name fails."""
     cli = CliRunner()
