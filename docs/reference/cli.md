@@ -8,6 +8,7 @@ All commands (except `init` and `clone`) discover `fdl.toml` by walking up from 
 |---------|-------------|
 | [`init`](#init) | Initialize a new project |
 | [`clone`](#clone) | Clone a published frozen DuckLake into a new project |
+| [`pull`](#pull) | Re-fetch the local SQLite catalog from its publish destination |
 | [`publish`](#publish) | Convert the live catalog to frozen DuckDB and upload |
 | [`run`](#run) | Run a pipeline command and publish on success |
 | [`sql`](#sql) | Execute SQL against the live catalog |
@@ -49,6 +50,22 @@ fdl clone URL [--force]
 | `--force`, `-f` | Overwrite an existing local fdl.toml / catalog |
 
 Expects both `<URL>/fdl.toml` and `<URL>/ducklake.duckdb` to be fetchable at the given base. Works with HTTPS, `s3://`, and local paths.
+
+## pull
+
+Re-fetch the local SQLite live catalog from a publish destination.
+
+```
+fdl pull [NAME]
+```
+
+| Argument | Description |
+|---|---|
+| `NAME` | Publish name (default: sole `[publishes.*]` entry) |
+
+Use this to re-sync the local SQLite catalog after another host has published, or after the local file has been corrupted. Only valid for `sqlite` metadata — postgres metadata is authoritative (there is no frozen copy to fall back to).
+
+`fdl.toml` is not modified; only `.fdl/ducklake.sqlite` is replaced.
 
 ## publish
 

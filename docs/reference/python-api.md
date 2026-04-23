@@ -24,6 +24,7 @@ fdl.publish()
 |---|---|
 | `fdl.init(name, ...)` | `fdl init NAME` |
 | `fdl.clone(url)` | `fdl clone URL` |
+| `fdl.pull(name=None)` | `fdl pull [NAME]` |
 | `fdl.publish(name=None)` | `fdl publish [NAME]` |
 | `fdl.run(publish_name, command)` | `fdl run [NAME] -- COMMAND` |
 | `fdl.connect()` | `fdl sql` / `fdl duckdb` |
@@ -48,6 +49,7 @@ See [Dagster](../integrations/dagster.md) for a worked example of using these AP
       members:
         - init
         - clone
+        - pull
         - publish
         - run
         - connect

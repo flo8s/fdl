@@ -40,6 +40,7 @@ META_JSON = "meta.json"
 from fdl.clone import clone as _do_clone  # noqa: E402
 from fdl.init_project import init_project as _do_init  # noqa: E402
 from fdl.publish import publish as _do_publish  # noqa: E402
+from fdl.pull import pull as _do_pull  # noqa: E402
 from fdl.run import run_command as _run_command  # noqa: E402
 
 
@@ -86,6 +87,18 @@ def publish(
     _do_publish(name, project_dir=project_dir, force=force)
 
 
+def pull(
+    name: str | None = None,
+    *,
+    project_dir: Path | None = None,
+) -> None:
+    """Replace the local SQLite live catalog with the published snapshot.
+
+    Only valid for sqlite metadata; raises ``ValueError`` for postgres.
+    """
+    _do_pull(name, project_dir=project_dir)
+
+
 def run(
     publish_name: str | None = None,
     command: list[str] | None = None,
@@ -120,5 +133,6 @@ __all__ = [
     "connect",
     "init",
     "publish",
+    "pull",
     "run",
 ]

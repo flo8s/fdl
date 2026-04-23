@@ -115,6 +115,26 @@ def clone(
 
 
 @app.command()
+def pull(
+    name: str = typer.Argument(
+        None, help="Publish name (default: sole [publishes.*] entry)"
+    ),
+) -> None:
+    """Replace the local SQLite live catalog with the published snapshot.
+
+    Only valid for sqlite metadata. For postgres metadata the live catalog
+    is authoritative and pull is a no-op (raises).
+    """
+    import fdl
+
+    try:
+        fdl.pull(name)
+    except (KeyError, ValueError, FileNotFoundError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+
+
+@app.command()
 def publish(
     name: str = typer.Argument(
         None, help="Publish name (default: sole [publishes.*] entry)"

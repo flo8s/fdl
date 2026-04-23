@@ -156,6 +156,7 @@ def test_public_api_surface():
         "connect",
         "init",
         "publish",
+        "pull",
         "run",
     }
     assert set(fdl.__all__) == expected
