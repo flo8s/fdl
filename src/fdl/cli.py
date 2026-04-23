@@ -1,5 +1,7 @@
 """fdl CLI entry point."""
 
+from __future__ import annotations
+
 import re
 from pathlib import Path
 
@@ -17,16 +19,6 @@ def _sanitize_name(name: str) -> str:
     if name and name[0].isdigit():
         name = f"_{name}"
     return name
-
-
-def _resolve_target(name: str) -> str:
-    """Resolve a target name, converting ValueError to BadParameter."""
-    from fdl.config import resolve_target
-
-    try:
-        return resolve_target(name)
-    except ValueError as e:
-        raise typer.BadParameter(str(e)) from None
 
 
 def _version_callback(value: bool) -> None:
@@ -58,110 +50,110 @@ def callback(
 
 @app.command()
 def init(
-    name: str = typer.Argument(
-        None, help="Datasource name (default: current directory name)"
+    name: str = typer.Argument(None, help="Datasource name"),
+    metadata_url: str = typer.Option(
+        None, "--metadata-url", help="Metadata catalog URL (sqlite:// or postgres://)"
     ),
-    public_url: str = typer.Option(
-        None, "--public-url", help="Public URL for dataset access"
+    data_url: str = typer.Option(
+        None, "--data-url", help="Data file storage URL (local path or s3://)"
     ),
-    target_url: str = typer.Option(
-        None, "--target-url", help="Target URL for push/pull"
+    publish_url: str = typer.Option(
+        None, "--publish-url", help="Publish destination URL (optional)"
     ),
-    target_name: str = typer.Option(None, "--target-name", help="Target name"),
+    publish_name: str = typer.Option(
+        "default", "--publish-name", help="Publish section name"
+    ),
 ) -> None:
     """Initialize a new fdl project."""
     import fdl
     from fdl.config import PROJECT_CONFIG
 
     dataset_dir = Path.cwd()
-    if name:
-        sanitized = _sanitize_name(name)
-        if sanitized != name:
-            raise typer.BadParameter(
-                f"'{name}' is not a valid SQL identifier. Use '{sanitized}' instead."
-            )
-    else:
-        default_name = _sanitize_name(dataset_dir.resolve().name)
-        name = typer.prompt("Datasource name", default=default_name)
+    if name is None:
+        default = _sanitize_name(dataset_dir.resolve().name)
+        name = typer.prompt("Datasource name", default=default)
+    elif _sanitize_name(name) != name:
+        raise typer.BadParameter(
+            f"'{name}' is not a valid SQL identifier. "
+            f"Use '{_sanitize_name(name)}' instead."
+        )
 
     if (dataset_dir / PROJECT_CONFIG).exists():
         raise typer.BadParameter(f"{PROJECT_CONFIG} already exists")
 
-    # Prompt for target config if not provided via flags
-    if target_name is None:
-        target_name = typer.prompt("Target name", default="default")
-    if public_url is None:
-        public_url = typer.prompt("Public URL", default="http://localhost:4001")
-    if target_url is None:
-        target_url = typer.prompt("Target URL", default=fdl.default_target_url())
-
-    fdl.init(
-        name,
-        target_name=target_name,
-        target_url=target_url,
-        public_url=public_url,
-        project_dir=dataset_dir,
-    )
-
-    console.print(f"[green]Initialized fdl project: {name}[/green]")
-
-
-@app.command()
-def pull(
-    source: str = typer.Argument(..., help="Target name (e.g. default)"),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Force re-download even if up to date"
-    ),
-) -> None:
-    """Pull DuckLake catalog from a target."""
-    import fdl
-
     try:
-        fdl.pull(source, force=force)
-    except ValueError as e:
+        fdl.init(
+            name,
+            metadata_url=metadata_url,
+            data_url=data_url,
+            publish_url=publish_url,
+            publish_name=publish_name,
+            project_dir=dataset_dir,
+        )
+    except (ValueError, RuntimeError) as e:
         raise typer.BadParameter(str(e)) from None
 
 
 @app.command()
-def push(
-    dest: str = typer.Argument(..., help="Target name (e.g. default)"),
+def clone(
+    url: str = typer.Argument(..., help="Base URL of a published catalog"),
     force: bool = typer.Option(
-        False, "--force", "-f", help="Override conflict detection"
+        False, "--force", "-f", help="Overwrite existing local fdl.toml / catalog"
     ),
 ) -> None:
-    """Push catalog to a target."""
+    """Clone a published frozen DuckLake into a new local live catalog."""
+    import fdl
+
+    try:
+        fdl.clone(url, force=force)
+    except FileExistsError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+    except (ValueError, FileNotFoundError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+
+
+@app.command()
+def publish(
+    name: str = typer.Argument(
+        None, help="Publish name (default: sole [publishes.*] entry)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Override ETag precondition on S3 upload"
+    ),
+) -> None:
+    """Convert the live catalog to a frozen DuckDB and upload it."""
     import fdl
     from fdl.meta import PushConflictError
 
     try:
-        fdl.push(dest, force=force)
+        fdl.publish(name, force=force)
     except PushConflictError as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
-    except FileNotFoundError as e:
+    except (KeyError, ValueError, FileNotFoundError) as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
-    except ValueError as e:
-        raise typer.BadParameter(str(e)) from None
 
 
 @app.command(
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False}
 )
 def run(ctx: typer.Context) -> None:
-    """Run a command with fdl environment variables.
+    """Run a pipeline and publish on success.
 
     \b
-    Sets FDL_CATALOG_URL, FDL_CATALOG_PATH, FDL_DATA_URL (and
-    FDL_DATA_BUCKET, FDL_DATA_PREFIX, FDL_S3_* for S3 targets):
-      fdl run TARGET
-      fdl run TARGET -- COMMAND [ARGS...]
+    Usage:
+      fdl run                    # uses command from fdl.toml
+      fdl run NAME                # publishes to [publishes.NAME]
+      fdl run [NAME] -- COMMAND   # explicit command
     """
     import fdl
 
-    target, cmd = _parse_command_args(ctx.args)
+    publish_name, cmd = _parse_run_args(ctx.args)
     try:
-        raise SystemExit(fdl.run(target, cmd))
+        raise SystemExit(fdl.run(publish_name, cmd))
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
@@ -169,71 +161,34 @@ def run(ctx: typer.Context) -> None:
         raise typer.BadParameter(_command_missing_hint(str(e))) from None
 
 
-@app.command(
-    context_settings={"allow_extra_args": True, "allow_interspersed_args": False}
-)
-def sync(
-    ctx: typer.Context,
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Override conflict detection on push"
-    ),
-) -> None:
-    """Run pipeline and push in one step.
+def _parse_run_args(args: list[str]) -> tuple[str | None, list[str] | None]:
+    """Parse ``[PUBLISH_NAME] [-- COMMAND]``."""
+    if "--" in args:
+        idx = args.index("--")
+        before, cmd = args[:idx], args[idx + 1 :]
+        if len(before) > 1:
+            raise typer.BadParameter("Usage: fdl run [NAME] [-- COMMAND]")
+        if not cmd:
+            raise typer.BadParameter("No command after --")
+        return (before[0] if before else None, cmd)
 
-    \b
-    Uses command from fdl.toml, or specify explicitly:
-      fdl sync TARGET
-      fdl sync TARGET -- COMMAND [ARGS...]
-    """
-    import fdl
-    from fdl.meta import PushConflictError
-
-    target, cmd = _parse_command_args(ctx.args)
-    try:
-        raise SystemExit(fdl.sync(target, cmd, force=force))
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except ValueError as e:
-        raise typer.BadParameter(_command_missing_hint(str(e))) from None
+    if len(args) > 1:
+        raise typer.BadParameter("Usage: fdl run [NAME] [-- COMMAND]")
+    return (args[0] if args else None, None)
 
 
 def _command_missing_hint(msg: str) -> str:
-    """Add CLI-specific usage hint to a 'no command' error."""
     return (
         f"{msg}\n"
-        "  Either use: fdl <command> TARGET -- COMMAND\n"
+        "  Either use: fdl run [NAME] -- COMMAND\n"
         "  Or add to fdl.toml:\n"
         '    command = "python main.py"'
     )
 
 
-def _parse_command_args(args: list[str]) -> tuple[str, list[str] | None]:
-    """Parse TARGET [-- COMMAND] from raw args.
-
-    When no ``--`` separator is given, returns (target, None) so the API
-    falls back to the ``command`` field in fdl.toml.
-    """
-    if "--" in args:
-        idx = args.index("--")
-        before, cmd = args[:idx], args[idx + 1 :]
-        if len(before) != 1:
-            raise typer.BadParameter("Usage: fdl <command> TARGET [-- COMMAND]")
-        if not cmd:
-            raise typer.BadParameter("No command after --")
-        return before[0], cmd
-
-    if len(args) != 1:
-        raise typer.BadParameter("Usage: fdl <command> TARGET [-- COMMAND]")
-    return args[0], None
-
-
 @app.command("config")
 def config_cmd(
-    key: str = typer.Argument(None, help="Config key (e.g. 'targets.default.url')"),
+    key: str = typer.Argument(None, help="Config key (e.g. 'metadata.url')"),
     value: str = typer.Argument(None, help="Value to set"),
 ) -> None:
     """Get or set fdl configuration (reads/writes fdl.toml)."""
@@ -270,29 +225,13 @@ def config_cmd(
 
 @app.command()
 def sql(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
     query: str = typer.Argument(..., help="SQL query to execute"),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip stale catalog check"
-    ),
 ) -> None:
-    """Execute a SQL query against the DuckLake catalog."""
+    """Execute a SQL query against the live DuckLake catalog."""
     import fdl
-    from fdl.config import datasource_name
-    from fdl.meta import catalog_is_stale
-
-    resolved = _resolve_target(target)
-    datasource = datasource_name()
-
-    if not force and catalog_is_stale(target, resolved, datasource):
-        console.print(
-            "[red]Remote catalog has been updated since the last pull. "
-            "Run 'fdl pull' first, or use --force to override.[/red]"
-        )
-        raise SystemExit(1)
 
     try:
-        with fdl.connect(target) as conn:
+        with fdl.connect() as conn:
             conn.execute(query)
             if not conn.description:
                 return
@@ -300,30 +239,31 @@ def sql(
             rows = conn.fetchall()
             if not rows:
                 return
-            # Format as table
             col_widths = [len(c) for c in columns]
             for row in rows:
                 for i, val in enumerate(row):
                     col_widths[i] = max(col_widths[i], len(str(val)))
-            header = " | ".join(c.ljust(w) for c, w in zip(columns, col_widths))
+            header = " | ".join(
+                c.ljust(w) for c, w in zip(columns, col_widths, strict=False)
+            )
             separator = "-+-".join("-" * w for w in col_widths)
             print(header)
             print(separator)
             for row in rows:
-                print(" | ".join(str(v).ljust(w) for v, w in zip(row, col_widths)))
-    except FileNotFoundError as e:
+                print(
+                    " | ".join(
+                        str(v).ljust(w) for v, w in zip(row, col_widths, strict=False)
+                    )
+                )
+    except (FileNotFoundError, KeyError) as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
 
 
 @app.command()
 def duckdb(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
     read_only: bool = typer.Option(
         False, "--read-only", help="Open the catalog in read-only mode"
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip stale catalog check"
     ),
     dry_run: bool = typer.Option(
         False,
@@ -336,29 +276,35 @@ def duckdb(
         help="Path to the duckdb binary (default: first on PATH)",
     ),
 ) -> None:
-    """Launch an interactive DuckDB shell with the DuckLake catalog attached."""
+    """Launch an interactive DuckDB shell with the live catalog attached."""
     import os
     import shlex
 
-    from fdl.config import datasource_name
+    from fdl.config import (
+        data_s3_config,
+        data_url,
+        datasource_name,
+        find_project_dir,
+        metadata_schema,
+        metadata_spec,
+    )
     from fdl.ducklake import build_attach_sql
-    from fdl.meta import catalog_is_stale
-
-    resolved = _resolve_target(target)
-    datasource = datasource_name()
-
-    if not force and catalog_is_stale(target, resolved, datasource):
-        console.print(
-            "[red]Remote catalog has been updated since the last pull. "
-            "Run 'fdl pull' first, or use --force to override.[/red]"
-        )
-        raise SystemExit(1)
 
     try:
-        stmts = build_attach_sql(target, read_only=read_only)
-    except FileNotFoundError as e:
+        root = find_project_dir()
+        spec = metadata_spec(root)
+        stmts = build_attach_sql(
+            metadata=spec,
+            data_url=data_url(root),
+            datasource=datasource_name(root),
+            read_only=read_only,
+            metadata_schema=metadata_schema(root),
+            data_s3_config=data_s3_config(root),
+        )
+    except (FileNotFoundError, KeyError, ValueError) as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
+
     argv = [duckdb_bin]
     for s in stmts:
         argv += ["-cmd", s]
@@ -374,19 +320,36 @@ def duckdb(
             f"[red]duckdb binary '{duckdb_bin}' not found on PATH. "
             f"Install DuckDB CLI or pass --duckdb-bin.[/red]"
         )
-        raise SystemExit(127)
+        raise SystemExit(127) from None
 
 
 @app.command()
 def serve(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
+    name: str = typer.Argument(
+        None, help="Publish name (default: sole [publishes.*] entry)"
+    ),
     port: int = typer.Option(4001, help="Port number"),
 ) -> None:
-    """Serve a target directory over HTTP (CORS + Range support)."""
+    """Serve a local publish directory over HTTP (CORS + Range support)."""
+    from fdl.config import find_project_dir, publish_url, resolve_publish_name
     from fdl.serve import run_server
 
-    serve_dir = Path(_resolve_target(target))
-    run_server(serve_dir, port)
+    try:
+        root = find_project_dir()
+        name = resolve_publish_name(name, root)
+        url = publish_url(name, root)
+    except (KeyError, ValueError, FileNotFoundError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+
+    if url.startswith(("s3://", "http://", "https://")):
+        console.print(
+            f"[red]publishes.{name}.url ({url}) is remote; "
+            "fdl serve only supports local paths.[/red]"
+        )
+        raise SystemExit(1)
+    local = url.removeprefix("file://")
+    run_server(Path(local), port)
 
 
 main: Typer = app
