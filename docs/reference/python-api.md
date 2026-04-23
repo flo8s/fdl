@@ -26,9 +26,7 @@ fdl.publish()
 | `fdl.clone(url)` | `fdl clone URL` |
 | `fdl.publish(name=None)` | `fdl publish [NAME]` |
 | `fdl.run(publish_name, command)` | `fdl run [NAME] -- COMMAND` |
-| `fdl.connect()` | (use directly via DuckDB) |
-
-`fdl.connect()` is the Python-only entry point — the CLI uses it internally to implement `fdl sql`.
+| `fdl.connect()` | `fdl sql` / `fdl duckdb` |
 
 ## Conventions
 
