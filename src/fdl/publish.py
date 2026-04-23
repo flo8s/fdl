@@ -75,16 +75,21 @@ def publish(
             src_type="sqlite",
             dst_type="duckdb",
             data_path=frozen_data_path,
+            src_schema="main",
         )
     elif spec.scheme == "postgres":
-        # Postgres live catalog support lands alongside the Phase 3 convert
-        # extension; sqlite is enough to validate the publish/clone loop.
-        raise NotImplementedError(
-            "publish from postgres metadata is not yet implemented"
+        pg_schema = schema or (spec.pg.schema if spec.pg else None) or "main"
+        _convert_ducklake_catalog(
+            None,
+            tmp_duckdb,
+            src_type="postgres",
+            dst_type="duckdb",
+            data_path=frozen_data_path,
+            src_spec=spec,
+            src_schema=pg_schema,
         )
     else:
         raise ValueError(f"Unsupported metadata scheme: {spec.scheme}")
-    _ = schema  # schema override is only relevant when attaching postgres live
 
     state_path = work_dir / META_JSON
     saved_etag = read_remote_etag(state_path)

@@ -237,26 +237,38 @@ def connect(
 
 
 # ---------------------------------------------------------------------------
-# Catalog conversion between sqlite and duckdb (used by clone / publish).
+# Catalog conversion across sqlite / duckdb / postgres (used by pull / publish).
 # ---------------------------------------------------------------------------
 
 
 def _convert_ducklake_catalog(
-    src_file: Path,
+    src_file: Path | None,
     dst_file: Path,
     *,
-    src_type: Literal["duckdb", "sqlite"],
+    src_type: Literal["duckdb", "sqlite", "postgres"],
     dst_type: Literal["duckdb", "sqlite"],
     data_path: str,
+    src_spec: CatalogSpec | None = None,
+    src_schema: str = "main",
 ) -> None:
-    """Convert a DuckLake catalog between DuckDB and SQLite formats.
+    """Convert a DuckLake catalog between DuckDB/SQLite/PostgreSQL backends.
 
-    Creates an empty destination catalog via the DuckLake extension (so its
-    metadata tables are provisioned), detaches, then raw-attaches both sides
-    to copy rows table-by-table. Writes via a ``.tmp`` file and atomically
-    renames on success. Any ``.tmp``/WAL leftovers are cleaned up in
-    ``finally``.
+    The destination is always a local file (duckdb or sqlite). Rows are copied
+    table-by-table via a pair of raw ATTACH connections, so an empty DuckLake
+    destination is provisioned first (via the DuckLake extension) and then
+    re-attached as a plain database for bulk copy. Writes go to a ``.tmp``
+    file and rename atomically on success; any ``.tmp``/WAL leftovers are
+    cleaned up in ``finally``.
+
+    For postgres sources, ``src_file`` is ignored; pass ``src_spec`` (with
+    ``spec.pg``). Reads are wrapped in a REPEATABLE READ transaction on the
+    postgres side so the copy sees a consistent snapshot even if writers are
+    active.
     """
+    if src_type == "postgres":
+        if src_spec is None or src_spec.pg is None:
+            raise ValueError("postgres source requires src_spec with pg info")
+
     SRC = "src"
     DST = "dst"
     tmp_file = dst_file.with_name(dst_file.name + ".tmp")
@@ -272,6 +284,8 @@ def _convert_ducklake_catalog(
         conn.execute("INSTALL ducklake; LOAD ducklake;")
         if src_type == "sqlite" or dst_type == "sqlite":
             conn.execute("INSTALL sqlite; LOAD sqlite;")
+        if src_type == "postgres":
+            conn.execute("INSTALL postgres; LOAD postgres;")
 
         dst_opts = [f"DATA_PATH '{_sql_escape(data_path)}'", f"META_TYPE '{dst_type}'"]
         if dst_type == "sqlite":
@@ -282,10 +296,23 @@ def _convert_ducklake_catalog(
         )
         conn.execute(f"DETACH {DST}")
 
-        src_attach = f"ATTACH '{src_file}' AS {SRC}"
-        if src_type == "sqlite":
-            src_attach += " (TYPE sqlite)"
-        conn.execute(src_attach)
+        if src_type == "postgres":
+            assert src_spec is not None and src_spec.pg is not None
+            dsn = postgres_attach_dsn(src_spec.pg)
+            conn.execute(
+                f"ATTACH '{_sql_escape(dsn)}' AS {SRC} (TYPE postgres, READ_ONLY)"
+            )
+            # Snapshot isolation: the copy below sees a single consistent
+            # view of the live postgres catalog, even under concurrent writes.
+            conn.execute(
+                f"CALL postgres_execute('{SRC}', "
+                f"'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')"
+            )
+        else:
+            src_attach = f"ATTACH '{src_file}' AS {SRC}"
+            if src_type == "sqlite":
+                src_attach += " (TYPE sqlite)"
+            conn.execute(src_attach)
 
         dst_attach = f"ATTACH '{tmp_file}' AS {DST}"
         if dst_type == "sqlite":
@@ -294,16 +321,20 @@ def _convert_ducklake_catalog(
 
         tables = conn.execute(
             "SELECT table_name FROM information_schema.tables "
-            f"WHERE table_catalog='{SRC}'"
+            f"WHERE table_catalog='{SRC}' "
+            f"AND table_schema='{_sql_escape(src_schema)}'"
         ).fetchall()
         for (table_name,) in tables:
             conn.execute(f"DELETE FROM {DST}.main.{table_name}")
             conn.execute(
                 f"INSERT INTO {DST}.main.{table_name} "
-                f"SELECT * FROM {SRC}.main.{table_name}"
+                f"SELECT * FROM {SRC}.{src_schema}.{table_name}"
             )
 
         conn.execute(f"CHECKPOINT {DST}")
+        if src_type == "postgres":
+            # Release the snapshot transaction before detaching.
+            conn.execute(f"CALL postgres_execute('{SRC}', 'COMMIT')")
         conn.close()
 
         if dst_file.exists():
