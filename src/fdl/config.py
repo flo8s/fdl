@@ -4,13 +4,237 @@ from __future__ import annotations
 
 import os
 import tomllib
+import urllib.parse
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from fdl.s3 import S3Config
 
 PROJECT_CONFIG = "fdl.toml"
+
+
+@dataclass(frozen=True)
+class PgConnInfo:
+    """Parsed components of a postgres:// URL."""
+
+    host: str
+    port: int | None
+    database: str
+    user: str | None
+    password: str | None
+    schema: str | None
+
+
+@dataclass(frozen=True)
+class CatalogSpec:
+    """Parsed [metadata].url — sqlite / postgres / duckdb backend."""
+
+    scheme: Literal["sqlite", "postgres", "duckdb"]
+    raw: str
+    path: str | None = None
+    pg: PgConnInfo | None = None
+
+
+def parse_catalog_url(url: str) -> CatalogSpec:
+    """Parse a catalog URL into a CatalogSpec. ${VAR} must already be expanded."""
+    if "://" not in url:
+        raise ValueError(
+            f"Catalog URL must include a scheme (sqlite://, postgres://, duckdb://): {url!r}"
+        )
+    parsed = urllib.parse.urlsplit(url)
+    scheme = parsed.scheme
+
+    if scheme == "sqlite":
+        # sqlite:///relative  → path = ./relative
+        # sqlite:////abs/path → path = /abs/path
+        path = parsed.netloc + parsed.path
+        path = path.lstrip("/") if not path.startswith("//") else path
+        # Restore leading / for absolute paths: sqlite:////abs → path = /abs
+        if url.startswith("sqlite:////"):
+            path = "/" + path.lstrip("/")
+        return CatalogSpec(scheme="sqlite", raw=url, path=path)
+
+    if scheme == "duckdb":
+        path = parsed.netloc + parsed.path
+        path = path.lstrip("/") if not url.startswith("duckdb:////") else "/" + path.lstrip("/")
+        return CatalogSpec(scheme="duckdb", raw=url, path=path)
+
+    if scheme in ("postgres", "postgresql"):
+        host = parsed.hostname or "localhost"
+        port = parsed.port
+        database = (parsed.path or "").lstrip("/") or ""
+        if not database:
+            raise ValueError(f"postgres URL missing database: {url!r}")
+        user = urllib.parse.unquote(parsed.username) if parsed.username else None
+        password = urllib.parse.unquote(parsed.password) if parsed.password else None
+        query = urllib.parse.parse_qs(parsed.query)
+        schema = query.get("schema", [None])[0]
+        return CatalogSpec(
+            scheme="postgres",
+            raw=url,
+            pg=PgConnInfo(
+                host=host,
+                port=port,
+                database=database,
+                user=user,
+                password=password,
+                schema=schema,
+            ),
+        )
+
+    raise ValueError(f"Unsupported catalog scheme {scheme!r}: {url!r}")
+
+
+def metadata_url(project_dir: Path | None = None) -> str:
+    """[metadata].url from fdl.toml (with ${VAR} expansion)."""
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    section = data.get("metadata")
+    if not isinstance(section, dict) or not section.get("url"):
+        raise KeyError(
+            f"[metadata].url not found in {PROJECT_CONFIG}. Run 'fdl init' first."
+        )
+    return os.path.expandvars(section["url"])
+
+
+def metadata_spec(project_dir: Path | None = None) -> CatalogSpec:
+    """Parsed [metadata] section as a CatalogSpec."""
+    return parse_catalog_url(metadata_url(project_dir))
+
+
+def metadata_schema(project_dir: Path | None = None) -> str | None:
+    """[metadata].schema override, or None if not set."""
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    section = data.get("metadata")
+    if isinstance(section, dict):
+        s = section.get("schema")
+        if s:
+            return os.path.expandvars(s)
+    return None
+
+
+def data_url_v11(project_dir: Path | None = None) -> str:
+    """[data].url from fdl.toml (with ${VAR} expansion)."""
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    section = data.get("data")
+    if not isinstance(section, dict) or not section.get("url"):
+        raise KeyError(
+            f"[data].url not found in {PROJECT_CONFIG}. Run 'fdl init' first."
+        )
+    return os.path.expandvars(section["url"])
+
+
+def data_s3_config(project_dir: Path | None = None) -> "S3Config | None":
+    """S3 credentials from [data] section, None if [data].url is not s3://."""
+    url = data_url_v11(project_dir)
+    if not url.startswith("s3://"):
+        return None
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    section = data.get("data", {})
+    bucket = url.removeprefix("s3://").split("/", 1)[0]
+
+    from fdl.s3 import S3Config
+
+    return S3Config(
+        bucket=bucket,
+        endpoint=os.path.expandvars(section.get("s3_endpoint", "")),
+        access_key_id=os.path.expandvars(section.get("s3_access_key_id", "")),
+        secret_access_key=os.path.expandvars(section.get("s3_secret_access_key", "")),
+    )
+
+
+def publish_names(project_dir: Path | None = None) -> list[str]:
+    """All publish names defined in [publishes.*] (insertion order)."""
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    pubs = data.get("publishes")
+    if not isinstance(pubs, dict):
+        return []
+    return [name for name, val in pubs.items() if isinstance(val, dict)]
+
+
+def resolve_publish_name(
+    name: str | None, project_dir: Path | None = None
+) -> str:
+    """Resolve an optional publish name: None → implicit if exactly one exists."""
+    names = publish_names(project_dir)
+    if name is not None:
+        if name not in names:
+            raise KeyError(
+                f"publish '{name}' not found in {PROJECT_CONFIG}. "
+                f"Defined: {names or 'none'}"
+            )
+        return name
+    if len(names) == 0:
+        raise KeyError(
+            f"No [publishes.*] defined in {PROJECT_CONFIG}. "
+            f"Add one with 'fdl config publishes.<name>.url <url>'."
+        )
+    if len(names) == 1:
+        return names[0]
+    raise ValueError(
+        f"Multiple publishes defined ({names}); specify one explicitly."
+    )
+
+
+def publish_url(name: str, project_dir: Path | None = None) -> str:
+    """[publishes.<name>].url from fdl.toml (with ${VAR} expansion)."""
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    section = data.get("publishes", {}).get(name)
+    if not isinstance(section, dict) or not section.get("url"):
+        raise KeyError(
+            f"[publishes.{name}].url not found in {PROJECT_CONFIG}."
+        )
+    return os.path.expandvars(section["url"])
+
+
+def publish_public_url(name: str, project_dir: Path | None = None) -> str | None:
+    """[publishes.<name>].public_url from fdl.toml, or None."""
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    section = data.get("publishes", {}).get(name)
+    if isinstance(section, dict):
+        pub = section.get("public_url")
+        if pub:
+            return os.path.expandvars(pub)
+    return None
+
+
+def publish_s3_config(
+    name: str, project_dir: Path | None = None
+) -> "S3Config | None":
+    """S3 credentials for a publish destination.
+
+    Falls back to [data] credentials if [publishes.<name>] does not override them.
+    Returns None when publishes.<name>.url is not s3://.
+    """
+    url = publish_url(name, project_dir)
+    if not url.startswith("s3://"):
+        return None
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    section = data.get("publishes", {}).get(name, {})
+    fallback = data.get("data", {})
+    bucket = url.removeprefix("s3://").split("/", 1)[0]
+
+    def _pick(key: str) -> str:
+        val = section.get(key) or fallback.get(key) or ""
+        return os.path.expandvars(val)
+
+    from fdl.s3 import S3Config
+
+    return S3Config(
+        bucket=bucket,
+        endpoint=_pick("s3_endpoint"),
+        access_key_id=_pick("s3_access_key_id"),
+        secret_access_key=_pick("s3_secret_access_key"),
+    )
 
 
 def find_project_dir(start: Path | None = None) -> Path:
