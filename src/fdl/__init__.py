@@ -64,6 +64,7 @@ def default_target_url() -> str:
 # function defined below).
 # ---------------------------------------------------------------------------
 
+from fdl.clone import clone as _do_clone  # noqa: E402
 from fdl.push import do_push as _do_push  # noqa: E402
 from fdl.pull import (  # noqa: E402
     do_pull as _do_pull,
@@ -285,6 +286,24 @@ def sync(
     return 0
 
 
+def clone(
+    url: str,
+    *,
+    force: bool = False,
+    project_dir: Path | None = None,
+) -> None:
+    """Clone a published frozen DuckLake into a new local live catalog.
+
+    Args:
+        url: Base URL of a published catalog (http/https, s3://, or local
+            path). ``<url>/fdl.toml`` and ``<url>/ducklake.duckdb`` must be
+            fetchable at that base.
+        force: Overwrite an existing local fdl.toml / SQLite catalog.
+        project_dir: Target directory. Defaults to ``Path.cwd()``.
+    """
+    _do_clone(url, project_dir=project_dir, force=force)
+
+
 @contextmanager
 def connect(
     target: str,
@@ -333,6 +352,7 @@ __all__ = [
     "ducklake_data_path",
     "fdl_target_dir",
     # Python API
+    "clone",
     "connect",
     "init",
     "pull",

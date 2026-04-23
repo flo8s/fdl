@@ -253,6 +253,7 @@ def test_public_api_surface() -> None:
         "ducklake_data_path",
         "fdl_target_dir",
         # Python API
+        "clone",
         "connect",
         "init",
         "pull",
