@@ -8,6 +8,7 @@ from typing import Literal
 import duckdb
 
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, ducklake_data_path
+from fdl.config import CatalogSpec, PgConnInfo
 from fdl.console import console
 
 # DuckLake ATTACH options applied to SQLite catalogs (v0.9.1+).
@@ -304,6 +305,158 @@ def convert_sqlite_to_duckdb(dataset_dir: Path, target_name: str) -> None:
         dst_type="duckdb",
         data_path=ducklake_data_path(str(duckdb_file)),
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.11 helpers — CatalogSpec-driven ATTACH + postgres support.
+# v0.10 helpers above are retained until Phase 5.
+# ---------------------------------------------------------------------------
+
+
+def _libpq_escape_value(value: str) -> str:
+    """Escape a value for a libpq ``key=value`` pair.
+
+    libpq requires values containing whitespace or special characters to be
+    single-quoted, with embedded single quotes and backslashes escaped by a
+    preceding backslash.
+    """
+    if value == "" or any(c in value for c in " \t\n\"'\\"):
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+    return value
+
+
+def postgres_attach_dsn(pg: PgConnInfo) -> str:
+    """Build a libpq DSN string from parsed PgConnInfo components."""
+    parts = [f"dbname={_libpq_escape_value(pg.database)}"]
+    if pg.host:
+        parts.append(f"host={_libpq_escape_value(pg.host)}")
+    if pg.port is not None:
+        parts.append(f"port={pg.port}")
+    if pg.user:
+        parts.append(f"user={_libpq_escape_value(pg.user)}")
+    if pg.password is not None:
+        parts.append(f"password={_libpq_escape_value(pg.password)}")
+    return " ".join(parts)
+
+
+def _ducklake_attach_target(spec: CatalogSpec) -> str:
+    """The string placed inside ``ATTACH 'ducklake:<here>' AS ...``."""
+    if spec.scheme == "sqlite":
+        if spec.path is None:
+            raise ValueError("sqlite catalog spec missing path")
+        return f"sqlite:{spec.path}"
+    if spec.scheme == "postgres":
+        if spec.pg is None:
+            raise ValueError("postgres catalog spec missing connection info")
+        return f"postgres:{postgres_attach_dsn(spec.pg)}"
+    if spec.scheme == "duckdb":
+        if spec.path is None:
+            raise ValueError("duckdb catalog spec missing path")
+        return spec.path
+    raise ValueError(f"Unsupported catalog scheme: {spec.scheme}")
+
+
+def build_attach_sql_v11(
+    *,
+    metadata: CatalogSpec,
+    data_url: str,
+    datasource: str,
+    read_only: bool = False,
+    metadata_schema: str | None = None,
+    data_s3_config: object | None = None,
+) -> list[str]:
+    """Build the ordered SQL to open a v0.11 live DuckLake catalog.
+
+    1. INSTALL/LOAD ducklake (and postgres/httpfs when applicable)
+    2. CREATE SECRET for S3 data storage (if data_url is s3://)
+    3. ATTACH 'ducklake:<metadata>' AS <datasource> (DATA_PATH '...', ...)
+    4. USE <datasource>
+    """
+    stmts: list[str] = ["INSTALL ducklake; LOAD ducklake;"]
+    if metadata.scheme == "postgres":
+        stmts.append("INSTALL postgres; LOAD postgres;")
+
+    is_s3 = data_url.startswith("s3://")
+    if is_s3:
+        if data_s3_config is None:
+            raise ValueError("data_s3_config is required for s3:// data_url")
+        stmts.append("INSTALL httpfs; LOAD httpfs;")
+        stmts.append(
+            "CREATE SECRET (TYPE s3, "
+            f"KEY_ID '{_sql_escape(data_s3_config.access_key_id)}', "
+            f"SECRET '{_sql_escape(data_s3_config.secret_access_key)}', "
+            f"ENDPOINT '{_sql_escape(data_s3_config.endpoint_host)}', "
+            "URL_STYLE 'path', REGION 'auto')"
+        )
+
+    opts = [
+        f"DATA_PATH '{_sql_escape(data_url)}'",
+        "OVERRIDE_DATA_PATH true",
+    ]
+    if metadata.scheme == "sqlite":
+        opts.extend(SQLITE_CATALOG_OPTIONS)
+    schema = metadata_schema or (
+        metadata.pg.schema if metadata.scheme == "postgres" and metadata.pg else None
+    )
+    if metadata.scheme == "postgres" and schema:
+        opts.append(f"METADATA_SCHEMA '{_sql_escape(schema)}'")
+    if read_only:
+        opts.append("READ_ONLY")
+
+    target = _ducklake_attach_target(metadata)
+    stmts.append(
+        f"ATTACH 'ducklake:{_sql_escape(target)}' AS {datasource} "
+        f"({', '.join(opts)})"
+    )
+    stmts.append(f"USE {datasource}")
+    return stmts
+
+
+def init_ducklake_v11(
+    spec: CatalogSpec,
+    data_path: str,
+    datasource: str,
+    *,
+    metadata_schema: str | None = None,
+    data_s3_config: object | None = None,
+) -> None:
+    """Initialize a v0.11 live catalog (idempotent for sqlite/duckdb file path).
+
+    For sqlite/duckdb: creates the catalog file if missing.
+    For postgres: the database must already exist. The schema is created
+    automatically via DuckLake's ATTACH when populated for the first time —
+    the caller should have created it via ``CREATE SCHEMA IF NOT EXISTS``.
+    """
+    # File-based: create parent dir and short-circuit if the file exists.
+    if spec.scheme in ("sqlite", "duckdb"):
+        if spec.path is None:
+            raise ValueError(f"{spec.scheme} spec missing path")
+        p = Path(spec.path)
+        if p.exists():
+            console.print(f"DuckLake: [dim]{p}[/dim]")
+            return
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+    console.print(
+        f"Creating DuckLake: {datasource} (DATA_PATH: [dim]{data_path}[/dim])"
+    )
+
+    conn = duckdb.connect(":memory:")
+    try:
+        for stmt in build_attach_sql_v11(
+            metadata=spec,
+            data_url=data_path,
+            datasource=datasource,
+            metadata_schema=metadata_schema,
+            data_s3_config=data_s3_config,
+        ):
+            conn.execute(stmt)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 
 
 def convert_duckdb_to_sqlite(dataset_dir: Path, target_name: str) -> None:
