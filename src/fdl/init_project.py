@@ -65,7 +65,7 @@ def _ensure_postgres_schema(pg: PgConnInfo, schema: str) -> None:
         conn.close()
 
 
-def _write_v11_toml(
+def _write_fdl_toml(
     path: Path,
     *,
     name: str,
@@ -92,7 +92,7 @@ def _write_v11_toml(
     path.write_text("\n".join(lines) + "\n")
 
 
-def init_project_v11(
+def init_project(
     name: str,
     *,
     metadata_url: str | None = None,
@@ -112,7 +112,7 @@ def init_project_v11(
     """
     import shutil
 
-    from fdl.ducklake import init_ducklake_v11
+    from fdl.ducklake import init_ducklake
 
     _validate_sql_identifier(name)
 
@@ -138,7 +138,7 @@ def init_project_v11(
             schema = spec.pg.schema or name
             _ensure_postgres_schema(spec.pg, schema)
 
-        _write_v11_toml(
+        _write_fdl_toml(
             config_path,
             name=name,
             metadata_url=metadata_url,
@@ -147,7 +147,7 @@ def init_project_v11(
             publish_name=publish_name,
         )
 
-        init_ducklake_v11(
+        init_ducklake(
             spec,
             expanded_data,
             name,

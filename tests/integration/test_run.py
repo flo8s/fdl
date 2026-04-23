@@ -1,195 +1,160 @@
-"""Integration tests for fdl run.
+"""Integration tests for run_command (run + implicit publish)."""
 
-Spec (docs/reference/cli.md#run):
-  fdl run TARGET -- COMMAND [ARGS...]
-  - Injects FDL_CATALOG_URL / FDL_CATALOG_PATH / FDL_DATA_URL (always)
-    and FDL_DATA_BUCKET / FDL_DATA_PREFIX / FDL_S3_* (S3 targets) into subprocess
-  - Existing environment variables are NOT overwritten
-"""
+from __future__ import annotations
 
+import sys
+import tomllib
 from pathlib import Path
 
-from typer.testing import CliRunner
+import duckdb
+import pytest
 
-from fdl.cli import app
-
-
-def test_fdl_catalog_path_points_to_local_file(fdl_project_dir: Path):
-    """fdl run injects FDL_CATALOG_PATH as an absolute path to the SQLite file."""
-    storage = fdl_project_dir / "storage"
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(storage),
-        "--target-name", "default",
-    ])
-
-    env_file = fdl_project_dir / "env_out.txt"
-    result = cli.invoke(app, [
-        "run", "default", "--",
-        "sh", "-c", f"echo $FDL_CATALOG_PATH > {env_file}",
-    ])
-    assert result.exit_code == 0, result.output
-    catalog = env_file.read_text().strip()
-    assert catalog.endswith("ducklake.sqlite")
-    assert Path(catalog).is_absolute()
-    assert Path(catalog).exists()
+from fdl import DUCKLAKE_FILE, FDL_DIR
+from fdl.config import CatalogSpec
+from fdl.ducklake import build_attach_sql, init_ducklake
+from fdl.run import run_command
 
 
-def test_fdl_catalog_url_is_sqlite_scheme(fdl_project_dir: Path):
-    """fdl run injects FDL_CATALOG_URL as a sqlite:///<abs> URL."""
-    storage = fdl_project_dir / "storage"
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(storage),
-        "--target-name", "default",
-    ])
+def _setup(
+    project_dir: Path,
+    *,
+    publishes: dict[str, str] | None = None,
+    command: str | None = None,
+) -> Path:
+    sqlite_path = project_dir / FDL_DIR / "ducklake.sqlite"
+    data_dir = project_dir / FDL_DIR / "data"
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
-    env_file = fdl_project_dir / "env_out.txt"
-    result = cli.invoke(app, [
-        "run", "default", "--",
-        "sh", "-c", f"echo $FDL_CATALOG_URL > {env_file}",
-    ])
-    assert result.exit_code == 0, result.output
-    url = env_file.read_text().strip()
-    assert url.startswith("sqlite:///")
-    assert url.endswith("/ducklake.sqlite")
+    lines = [
+        'name = "ds"',
+    ]
+    if command:
+        lines.append(f'command = "{command}"')
+    lines += [
+        "",
+        "[metadata]",
+        f'url = "sqlite:///{sqlite_path.resolve()}"',
+        "",
+        "[data]",
+        f'url = "{data_dir.resolve()}"',
+    ]
+    for name, url in (publishes or {}).items():
+        lines += [
+            "",
+            f"[publishes.{name}]",
+            f'url = "{url}"',
+        ]
+    (project_dir / "fdl.toml").write_text("\n".join(lines) + "\n")
 
-
-def test_existing_env_vars_are_not_overwritten(fdl_project_dir: Path, monkeypatch):
-    """Pre-set FDL_DATA_URL is preserved, enabling CI/CD pre-configuration."""
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(fdl_project_dir / "storage"),
-        "--target-name", "default",
-    ])
-
-    monkeypatch.setenv("FDL_DATA_URL", "custom_value")
-    env_file = fdl_project_dir / "env_out.txt"
-    result = cli.invoke(app, [
-        "run", "default", "--",
-        "sh", "-c", f"echo $FDL_DATA_URL > {env_file}",
-    ])
-    assert result.exit_code == 0, result.output
-    assert env_file.read_text().strip() == "custom_value"
+    spec = CatalogSpec(
+        scheme="sqlite",
+        raw=f"sqlite:///{sqlite_path}",
+        path=str(sqlite_path),
+    )
+    init_ducklake(spec, str(data_dir), "ds")
+    return sqlite_path
 
 
-def test_fdl_data_url_ends_with_files(fdl_project_dir: Path):
-    """fdl run injects FDL_DATA_URL derived from target storage.
+class TestRunV11:
+    def test_run_no_publishes_skips_publish(self, fdl_project_dir):
+        _setup(fdl_project_dir)
+        rc = run_command(
+            publish_name=None,
+            cmd=[sys.executable, "-c", "print('hello')"],
+            project_dir=fdl_project_dir,
+        )
+        assert rc == 0
 
-    Spec: FDL_DATA_URL = {target_storage}/ducklake.duckdb.files/
-    """
-    storage = fdl_project_dir / "storage"
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(storage),
-        "--target-name", "default",
-    ])
+    def test_run_single_publish_publishes_implicitly(
+        self, fdl_project_dir, tmp_path,
+    ):
+        dest = tmp_path / "pub"
+        _setup(fdl_project_dir, publishes={"default": str(dest)})
+        rc = run_command(
+            publish_name=None,
+            cmd=[sys.executable, "-c", "print('ok')"],
+            project_dir=fdl_project_dir,
+        )
+        assert rc == 0
+        assert (dest / "fdl.toml").exists()
+        assert (dest / DUCKLAKE_FILE).exists()
 
-    env_file = fdl_project_dir / "env_out.txt"
-    result = cli.invoke(app, [
-        "run", "default", "--",
-        "sh", "-c", f"echo $FDL_DATA_URL > {env_file}",
-    ])
-    assert result.exit_code == 0, result.output
-    data_url = env_file.read_text().strip()
-    assert data_url.endswith("ducklake.duckdb.files/")
-    assert str(storage) in data_url
+    def test_multiple_publishes_without_name_errors(
+        self, fdl_project_dir, tmp_path,
+    ):
+        _setup(
+            fdl_project_dir,
+            publishes={
+                "a": str(tmp_path / "a"),
+                "b": str(tmp_path / "b"),
+            },
+        )
+        with pytest.raises(ValueError, match="Multiple"):
+            run_command(
+                publish_name=None,
+                cmd=[sys.executable, "-c", "print('x')"],
+                project_dir=fdl_project_dir,
+            )
 
+    def test_explicit_publish_name_selects_one(
+        self, fdl_project_dir, tmp_path,
+    ):
+        dest_a = tmp_path / "a"
+        dest_b = tmp_path / "b"
+        _setup(
+            fdl_project_dir,
+            publishes={"a": str(dest_a), "b": str(dest_b)},
+        )
+        rc = run_command(
+            publish_name="b",
+            cmd=[sys.executable, "-c", "print('picked b')"],
+            project_dir=fdl_project_dir,
+        )
+        assert rc == 0
+        assert (dest_b / DUCKLAKE_FILE).exists()
+        assert not (dest_a / DUCKLAKE_FILE).exists()
 
-def test_missing_separator_fails(fdl_project_dir: Path):
-    """fdl run without -- separator fails."""
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(fdl_project_dir / "storage"),
-        "--target-name", "default",
-    ])
+    def test_non_zero_exit_skips_publish(self, fdl_project_dir, tmp_path):
+        dest = tmp_path / "pub"
+        _setup(fdl_project_dir, publishes={"default": str(dest)})
+        rc = run_command(
+            publish_name=None,
+            cmd=[sys.executable, "-c", "import sys; sys.exit(3)"],
+            project_dir=fdl_project_dir,
+        )
+        assert rc == 3
+        assert not (dest / DUCKLAKE_FILE).exists()
 
-    result = cli.invoke(app, ["run", "default", "echo", "hello"])
-    assert result.exit_code != 0
+    def test_command_from_fdl_toml(self, fdl_project_dir, tmp_path):
+        dest = tmp_path / "pub"
+        _setup(
+            fdl_project_dir,
+            publishes={"default": str(dest)},
+            command=f"{sys.executable} -c pass",
+        )
+        rc = run_command(
+            publish_name=None, cmd=None, project_dir=fdl_project_dir,
+        )
+        assert rc == 0
+        assert (dest / DUCKLAKE_FILE).exists()
 
-
-def test_empty_command_after_separator_fails(fdl_project_dir: Path):
-    """fdl run with empty command after -- fails."""
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(fdl_project_dir / "storage"),
-        "--target-name", "default",
-    ])
-
-    result = cli.invoke(app, ["run", "default", "--"])
-    assert result.exit_code != 0
-
-
-def test_subprocess_exit_code_is_propagated(fdl_project_dir: Path):
-    """fdl run propagates the subprocess exit code."""
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(fdl_project_dir / "storage"),
-        "--target-name", "default",
-    ])
-
-    result = cli.invoke(app, [
-        "run", "default", "--",
-        "python", "-c", "raise SystemExit(42)",
-    ])
-    assert result.exit_code == 42
-
-
-def test_run_errors_when_target_has_no_catalog(fdl_project_dir: Path):
-    """fdl run fails with a helpful message when neither init nor pull has produced a catalog."""
-    storage = fdl_project_dir / "storage"
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(storage),
-        "--target-name", "default",
-    ])
-    # Add a second target without a catalog in the (empty) remote.
-    from fdl.config import set_value
-    set_value("targets.local.url", str(storage), fdl_project_dir / "fdl.toml")
-    set_value("targets.local.public_url", "http://localhost:4001", fdl_project_dir / "fdl.toml")
-
-    result = cli.invoke(app, ["run", "local", "--", "sh", "-c", "true"])
-    assert result.exit_code != 0
-    assert "fdl init" in result.output
-    assert "fdl pull" in result.output
-    # Regression guard: pull_if_needed used to return "No local catalog" even
-    # when the pull did not actually materialize one, causing a misleading
-    # "pulled from <target>" log line right above the error.
-    assert "pulled from" not in result.output
-
-
-def test_run_reads_command_from_toml(fdl_project_dir: Path):
-    """fdl run TARGET (no --) reads command from fdl.toml."""
-    from fdl.config import set_value
-
-    storage = fdl_project_dir / "storage"
-    cli = CliRunner()
-    cli.invoke(app, [
-        "init", "test_ds",
-        "--public-url", "http://localhost:4001",
-        "--target-url", str(storage),
-        "--target-name", "default",
-    ])
-
-    marker = fdl_project_dir / "ran.txt"
-    set_value("command", f"sh -c 'echo ok > {marker}'")
-
-    result = cli.invoke(app, ["run", "default"])
-    assert result.exit_code == 0, result.output
-    assert marker.read_text().strip() == "ok"
+    def test_env_propagates_fdl_catalog_url(self, fdl_project_dir, tmp_path):
+        sqlite_path = _setup(fdl_project_dir)
+        script = (
+            "import os, sys; "
+            "sys.stdout.write(os.environ.get('FDL_CATALOG_URL', '<unset>'))"
+        )
+        # Redirect the subprocess's stdout to a file to observe the env var.
+        out = fdl_project_dir / "out.txt"
+        rc = run_command(
+            publish_name=None,
+            cmd=[
+                sys.executable, "-c",
+                f"import sys; open({str(out)!r}, 'w').write("
+                "__import__('os').environ.get('FDL_CATALOG_URL', '<unset>'))",
+            ],
+            project_dir=fdl_project_dir,
+        )
+        assert rc == 0
+        assert out.read_text().startswith("sqlite:///")
+        assert str(sqlite_path.resolve()) in out.read_text()

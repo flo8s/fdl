@@ -9,14 +9,13 @@ DuckLake catalogs without spawning a subprocess.
 ```python
 import fdl
 
-fdl.init("mydata", target_url="s3://my-bucket")
-fdl.pull("default")
+fdl.init("mydata", publish_url="s3://public-bucket/mydata")
 
-with fdl.connect("default") as conn:
+with fdl.connect() as conn:
     conn.execute("CREATE TABLE t (x INTEGER)")
     conn.execute("INSERT INTO t VALUES (1), (2), (3)")
 
-fdl.push("default")
+fdl.publish()
 ```
 
 ## Function-to-command mapping
@@ -24,33 +23,25 @@ fdl.push("default")
 | Python API | CLI |
 |---|---|
 | `fdl.init(name, ...)` | `fdl init NAME` |
-| `fdl.pull(target)` | `fdl pull TARGET` |
-| `fdl.push(target)` | `fdl push TARGET` |
-| `fdl.run(target, command)` | `fdl run TARGET -- COMMAND` |
-| `fdl.sync(target, command)` | `fdl sync TARGET -- COMMAND` |
-| `fdl.connect(target)` | (use directly via DuckDB) |
+| `fdl.clone(url)` | `fdl clone URL` |
+| `fdl.publish(name=None)` | `fdl publish [NAME]` |
+| `fdl.run(publish_name, command)` | `fdl run [NAME] -- COMMAND` |
+| `fdl.connect()` | (use directly via DuckDB) |
 
-`fdl.connect()` is the Python-only entry point — the CLI uses it internally
-to implement `fdl sql`.
+`fdl.connect()` is the Python-only entry point — the CLI uses it internally to implement `fdl sql`.
 
 ## Conventions
 
-- `target` is a **required positional argument**. There is no implicit
-  `"default"` target; pass the target name explicitly.
-- Each function accepts a `project_dir: Path | None` keyword. When omitted,
-  fdl walks up from the current working directory to find the nearest
-  `fdl.toml`, mirroring CLI behavior.
-- Console output (progress lines, conflict detection, etc.) matches the CLI
-  and is written to stdout.
-- `fdl.run()` and `fdl.sync()` return the subprocess exit code as an `int`.
-  They do not raise on non-zero exit; check the return value.
-- `fdl.init()` is **not idempotent**: it raises `FileExistsError` if
-  `fdl.toml` is already present. Initialize once (typically via the CLI)
-  and commit `fdl.toml` to the repo; the Python API is for day-to-day
-  operations, not reinitialization.
+- `fdl.connect()` and `fdl.publish()` take no required positional argument: the live catalog is always resolved from `[metadata]`/`[data]` in `fdl.toml`.
+- Each function accepts a `project_dir: Path | None` keyword. When omitted, fdl walks up from the current working directory to find the nearest `fdl.toml`, mirroring CLI behavior.
+- `fdl.run()` returns the subprocess exit code as an `int`. It does not raise on non-zero exit; check the return value. On success, `fdl.run()` invokes publish automatically (see below).
+- `fdl.publish(name=None)`:
+  - `None` with exactly one `[publishes.*]` → implicit
+  - `None` with multiple entries → raises `ValueError`
+  - `None` with zero entries → raises `KeyError`
+- `fdl.init()` is **not idempotent**: it raises `FileExistsError` if `fdl.toml` is already present.
 
-See [Dagster](../integrations/dagster.md) for a worked example of using
-these APIs inside a Dagster asset.
+See [Dagster](../integrations/dagster.md) for a worked example of using these APIs inside a Dagster asset.
 
 ## Reference
 
@@ -58,11 +49,7 @@ these APIs inside a Dagster asset.
     options:
       members:
         - init
-        - pull
-        - push
+        - clone
+        - publish
         - run
-        - sync
         - connect
-        - default_target_url
-        - fdl_target_dir
-        - ducklake_data_path

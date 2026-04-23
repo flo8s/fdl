@@ -1,415 +1,263 @@
-"""Unit tests for fdl/config.py.
+"""v0.11 config helpers: [metadata] / [data] / [publishes] schema."""
 
-Tests the config resolution logic that all CLI commands depend on:
-target resolution, env var dict construction, path derivation, TOML I/O.
-"""
-
-from pathlib import Path
+from __future__ import annotations
 
 import pytest
 
 from fdl.config import (
-    catalog_path,
-    catalog_url,
-    data_bucket_and_prefix,
+    CatalogSpec,
+    PgConnInfo,
     data_url,
-    datasource_name,
-    ducklake_url,
     fdl_env_dict,
-    get_all,
-    resolve_target,
-    set_value,
-    storage,
-    target_public_url,
-    target_s3_config,
+    metadata_schema,
+    metadata_spec,
+    metadata_url,
+    parse_catalog_url,
+    publish_names,
+    publish_public_url,
+    publish_url,
+    resolve_publish_name,
 )
 
 
-def _setup_target(project_dir, name="default", url="s3://my-bucket", **extra):
-    """Write a target config to fdl.toml."""
-    path = project_dir / "fdl.toml"
-    set_value(f"targets.{name}.url", url, path)
-    for k, v in extra.items():
-        set_value(f"targets.{name}.{k}", v, path)
-
-
-# ---------------------------------------------------------------------------
-# set_value / get_all — TOML round-trip
-# Spec: fdl config stores settings in fdl.toml with dotted keys up to 3 levels
-# ---------------------------------------------------------------------------
-
-
-def test_set_value_creates_new_file(fdl_project_dir):
-    """set_value creates fdl.toml if it doesn't exist."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "test", path)
-    assert path.exists()
-
-
-def test_set_value_three_level_key(fdl_project_dir):
-    """Dotted key targets.default.url creates nested TOML sections."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("targets.default.url", "s3://bucket", path)
-    result = get_all(path)
-    assert result["targets.default.url"] == "s3://bucket"
-
-
-def test_set_value_four_level_key_is_rejected(fdl_project_dir):
-    """Keys deeper than 3 levels are rejected."""
-    with pytest.raises(ValueError, match="Key too deep"):
-        set_value("a.b.c.d", "x", fdl_project_dir / "fdl.toml")
-
-
-def test_set_value_preserves_special_characters(fdl_project_dir):
-    """Quotes and backslashes in values survive a set → get round-trip.
-
-    Important for S3 endpoints and Windows paths.
-    """
-    path = fdl_project_dir / "fdl.toml"
-    set_value("quote", 'say "hello"', path)
-    set_value("backslash", "C:\\Users\\data", path)
-    result = get_all(path)
-    assert result["quote"] == 'say "hello"'
-    assert result["backslash"] == "C:\\Users\\data"
-
-
-def test_get_all_includes_toplevel_scalars(fdl_project_dir):
-    """get_all returns top-level keys like name and catalog, not just sections."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "myds", path)
-    set_value("catalog", "duckdb", path)
-    set_value("targets.default.url", "s3://bucket", path)
-    result = get_all(path)
-    assert result["name"] == "myds"
-    assert result["catalog"] == "duckdb"
-    assert result["targets.default.url"] == "s3://bucket"
-
-
-# ---------------------------------------------------------------------------
-# datasource_name
-# Spec: reads name from fdl.toml. Raises if missing (no fallback).
-# ---------------------------------------------------------------------------
-
-
-def test_datasource_name_reads_from_toml(fdl_project_dir):
-    """Returns the name field from fdl.toml."""
-    set_value("name", "myds", fdl_project_dir / "fdl.toml")
-    assert datasource_name(fdl_project_dir) == "myds"
-
-
-def test_datasource_name_without_toml_raises(fdl_project_dir):
-    """Raises FileNotFoundError when fdl.toml doesn't exist."""
-    with pytest.raises(FileNotFoundError):
-        datasource_name(fdl_project_dir)
-
-
-# ---------------------------------------------------------------------------
-# storage / catalog_path / catalog_url / data_url / data_bucket_and_prefix
-# Spec: internal default helpers + env-var overridable FDL_* resolvers.
-#        catalog_path is SQLite-only; legacy ducklake.duckdb is ignored.
-# ---------------------------------------------------------------------------
-
-
-def test_storage_defaults_to_fdl_dir(fdl_project_dir):
-    """storage() returns the default .fdl base when no target is given."""
-    assert storage() == ".fdl"
-
-
-def test_catalog_path_returns_sqlite_regardless_of_existence(fdl_project_dir):
-    """catalog_path always points at ducklake.sqlite, even when the file is missing."""
-    assert catalog_path() == ".fdl/ducklake.sqlite"
-    (fdl_project_dir / ".fdl").mkdir()
-    (fdl_project_dir / ".fdl" / "ducklake.sqlite").touch()
-    assert catalog_path() == ".fdl/ducklake.sqlite"
-
-
-def test_catalog_path_ignores_legacy_duckdb(fdl_project_dir):
-    """A stray ducklake.duckdb does not shift catalog_path off the SQLite target.
-
-    Regression guard for the v0.8 -> v0.9 migration: the legacy file is not
-    considered a valid local catalog. Users must run 'fdl pull <target> --force'
-    (or fdl init) to recover, which the downstream FileNotFoundError makes clear.
-    """
-    (fdl_project_dir / ".fdl").mkdir()
-    (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
-    assert catalog_path() == ".fdl/ducklake.sqlite"
-
-
-def test_catalog_path_respects_env_var(fdl_project_dir, monkeypatch):
-    """FDL_CATALOG_PATH env var overrides derivation."""
-    monkeypatch.setenv("FDL_CATALOG_PATH", "/custom/catalog.db")
-    assert catalog_path() == "/custom/catalog.db"
-
-
-def test_catalog_url_is_always_sqlite_scheme(fdl_project_dir):
-    """catalog_url always returns sqlite:/// (legacy .duckdb is ignored)."""
-    (fdl_project_dir / ".fdl").mkdir()
-    (fdl_project_dir / ".fdl" / "ducklake.duckdb").touch()
-    url = catalog_url()
-    assert url.startswith("sqlite:///")
-    assert url.endswith("/ducklake.sqlite")
-
-
-def test_catalog_url_respects_env_var(fdl_project_dir, monkeypatch):
-    """FDL_CATALOG_URL env var overrides derivation."""
-    monkeypatch.setenv("FDL_CATALOG_URL", "sqlite:////custom/x.sqlite")
-    assert catalog_url() == "sqlite:////custom/x.sqlite"
-
-
-def test_data_url_defaults_from_storage(fdl_project_dir):
-    """data_url returns {storage}/ducklake.duckdb.files/ by default."""
-    assert data_url() == ".fdl/ducklake.duckdb.files/"
-
-
-def test_data_url_respects_env_var(fdl_project_dir, monkeypatch):
-    """FDL_DATA_URL env var overrides the derived value."""
-    monkeypatch.setenv("FDL_DATA_URL", "s3://custom/data/")
-    assert data_url() == "s3://custom/data/"
-
-
-def test_data_bucket_and_prefix_for_s3_with_subpath(fdl_project_dir):
-    """S3 target with a sub-path yields (bucket, 'sub/ds/ducklake.duckdb.files/')."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    set_value("targets.default.url", "s3://my-bucket/prefix", path)
-    assert data_bucket_and_prefix("default", fdl_project_dir) == (
-        "my-bucket",
-        "prefix/ds/ducklake.duckdb.files/",
-    )
-
-
-def test_data_bucket_and_prefix_for_s3_at_bucket_root(fdl_project_dir):
-    """S3 target without sub-path yields (bucket, 'ds/ducklake.duckdb.files/')."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    set_value("targets.default.url", "s3://my-bucket", path)
-    assert data_bucket_and_prefix("default", fdl_project_dir) == (
-        "my-bucket",
-        "ds/ducklake.duckdb.files/",
-    )
-
-
-def test_data_bucket_and_prefix_for_local_target_is_none(fdl_project_dir):
-    """Local targets return None (no bucket concept)."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    set_value("targets.default.url", str(fdl_project_dir / "local"), path)
-    assert data_bucket_and_prefix("default", fdl_project_dir) is None
-
-
-# ---------------------------------------------------------------------------
-# resolve_target
-# Spec: all commands require a registered target name. Direct URLs are rejected.
-#        ${VAR} and ~ are expanded.
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_target_returns_url(fdl_project_dir):
-    """Resolves a registered target name to its URL from fdl.toml."""
-    _setup_target(fdl_project_dir, url="s3://my-bucket")
-    assert resolve_target("default", fdl_project_dir) == "s3://my-bucket"
-
-
-def test_resolve_target_unknown_name_raises(fdl_project_dir):
-    """Raises ValueError for an unregistered target name."""
-    set_value("name", "test", fdl_project_dir / "fdl.toml")
-    with pytest.raises(ValueError, match="not found"):
-        resolve_target("nonexistent", fdl_project_dir)
-
-
-def test_resolve_target_rejects_direct_s3_url(fdl_project_dir):
-    """Direct S3 URLs are rejected — must use a registered target name."""
-    with pytest.raises(ValueError, match="looks like a URL"):
-        resolve_target("s3://bucket", fdl_project_dir)
-
-
-def test_resolve_target_rejects_absolute_path(fdl_project_dir):
-    """Absolute paths are rejected — must use a registered target name."""
-    with pytest.raises(ValueError, match="looks like a URL"):
-        resolve_target("/some/path", fdl_project_dir)
-
-
-def test_resolve_target_rejects_relative_path(fdl_project_dir):
-    """Relative paths are rejected — must use a registered target name."""
-    with pytest.raises(ValueError, match="looks like a URL"):
-        resolve_target("./path", fdl_project_dir)
-
-
-def test_resolve_target_expands_env_vars(fdl_project_dir, monkeypatch):
-    """${VAR} in target URL is expanded from the environment."""
-    monkeypatch.setenv("MY_BUCKET", "s3://real-bucket")
-    _setup_target(fdl_project_dir, url="${MY_BUCKET}")
-    assert resolve_target("default", fdl_project_dir) == "s3://real-bucket"
-
-
-def test_resolve_target_expands_tilde(fdl_project_dir):
-    """~ in local target URL is expanded to the home directory."""
-    _setup_target(fdl_project_dir, url="~/data/fdl")
-    result = resolve_target("default", fdl_project_dir)
-    assert result.startswith(str(Path.home()))
-    assert result.endswith("data/fdl")
-
-
-# ---------------------------------------------------------------------------
-# target_s3_config
-# Spec: builds S3Config from fdl.toml target settings with ${VAR} expansion
-# ---------------------------------------------------------------------------
-
-
-def test_s3_config_from_toml(fdl_project_dir):
-    """Builds S3Config with correct bucket, endpoint, and credentials."""
-    _setup_target(
-        fdl_project_dir,
-        url="s3://my-bucket",
-        s3_endpoint="https://r2.dev",
-        s3_access_key_id="AKID",
-        s3_secret_access_key="SECRET",
-    )
-    s3 = target_s3_config("default", fdl_project_dir)
-    assert s3.bucket == "my-bucket"
-    assert s3.endpoint == "https://r2.dev"
-    assert s3.access_key_id == "AKID"
-    assert s3.secret_access_key == "SECRET"
-
-
-def test_s3_config_expands_env_vars(fdl_project_dir, monkeypatch):
-    """${VAR} in S3 credentials is expanded from the environment."""
-    monkeypatch.setenv("EP", "https://r2.dev")
-    _setup_target(fdl_project_dir, url="s3://bucket", s3_endpoint="${EP}")
-    assert target_s3_config("default", fdl_project_dir).endpoint == "https://r2.dev"
-
-
-def test_s3_config_rejects_non_s3_target(fdl_project_dir):
-    """Raises ValueError for a local target — S3Config is S3-only."""
-    _setup_target(fdl_project_dir, url="~/local/path")
-    with pytest.raises(ValueError, match="not an S3 target"):
-        target_s3_config("default", fdl_project_dir)
-
-
-# ---------------------------------------------------------------------------
-# target_public_url / ducklake_url
-# Spec: public_url is the base URL for HTTP access to datasets
-# ---------------------------------------------------------------------------
-
-
-def test_public_url_returns_configured_value(fdl_project_dir):
-    """Returns the public_url from fdl.toml."""
-    _setup_target(fdl_project_dir, public_url="http://localhost:4001")
-    assert target_public_url("default", fdl_project_dir) == "http://localhost:4001"
-
-
-def test_public_url_returns_none_when_not_set(fdl_project_dir):
-    """Returns None when public_url is not configured for the target."""
-    _setup_target(fdl_project_dir)
-    assert target_public_url("default", fdl_project_dir) is None
-
-
-def test_ducklake_url_constructs_full_catalog_url(fdl_project_dir):
-    """Constructs {public_url}/{datasource}/ducklake.duckdb."""
-    _setup_target(fdl_project_dir, public_url="http://localhost:4001")
-    assert ducklake_url("my_ds", "default", fdl_project_dir) == \
-        "http://localhost:4001/my_ds/ducklake.duckdb"
-
-
-def test_ducklake_url_raises_without_public_url(fdl_project_dir):
-    """Raises KeyError when public_url is not configured."""
-    _setup_target(fdl_project_dir)
-    with pytest.raises(KeyError, match="public_url not configured"):
-        ducklake_url("my_ds", "default", fdl_project_dir)
-
-
-# ---------------------------------------------------------------------------
-# fdl_env_dict
-# Spec: all FDL_* env vars injected by fdl run.
-#        Always: FDL_CATALOG_URL, FDL_CATALOG_PATH, FDL_DATA_URL.
-#        S3 only: FDL_DATA_BUCKET, FDL_DATA_PREFIX, FDL_S3_*.
-# ---------------------------------------------------------------------------
-
-
-def test_env_dict_contains_catalog_url_path_and_data_url(fdl_project_dir):
-    """Local target produces URL + PATH + DATA_URL (always-present keys).
-
-    Spec: FDL_CATALOG_URL  = sqlite:///<abs-path>.sqlite
-          FDL_CATALOG_PATH = <abs-path>.sqlite
-          FDL_DATA_URL     = {storage_override}/ducklake.duckdb.files/
-    """
-    _setup_target(fdl_project_dir, url=str(fdl_project_dir / "storage"))
-    storage_val = str(fdl_project_dir / "storage" / "ds")
-    env = fdl_env_dict(target_name="default", storage_override=storage_val)
-    assert env["FDL_CATALOG_URL"].startswith("sqlite:///")
-    assert env["FDL_CATALOG_URL"].endswith("/ducklake.sqlite")
-    assert env["FDL_CATALOG_PATH"].endswith("/.fdl/default/ducklake.sqlite")
-    assert Path(env["FDL_CATALOG_PATH"]).is_absolute()
-    assert env["FDL_DATA_URL"] == f"{storage_val}/ducklake.duckdb.files/"
-
-
-def test_env_dict_includes_s3_bucket_prefix_and_creds_for_s3_target(
-    fdl_project_dir,
-):
-    """S3 target adds FDL_DATA_BUCKET / FDL_DATA_PREFIX / FDL_S3_* keys."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    _setup_target(
-        fdl_project_dir,
-        url="s3://bucket",
-        s3_endpoint="https://r2.dev",
-        s3_access_key_id="AKID",
-        s3_secret_access_key="SECRET",
-    )
-    env = fdl_env_dict(target_name="default", storage_override="s3://bucket/ds")
-    assert env["FDL_DATA_BUCKET"] == "bucket"
-    assert env["FDL_DATA_PREFIX"] == "ds/ducklake.duckdb.files/"
-    assert env["FDL_S3_ENDPOINT"] == "https://r2.dev"
-    assert env["FDL_S3_ENDPOINT_HOST"] == "r2.dev"
-    assert env["FDL_S3_ACCESS_KEY_ID"] == "AKID"
-    assert env["FDL_S3_SECRET_ACCESS_KEY"] == "SECRET"
-
-
-def test_env_dict_omits_s3_keys_for_local_target(fdl_project_dir):
-    """Local target does not include FDL_DATA_BUCKET / FDL_DATA_PREFIX / FDL_S3_*."""
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    _setup_target(fdl_project_dir, url=str(fdl_project_dir / "storage"))
-    env = fdl_env_dict(
-        target_name="default",
-        storage_override=str(fdl_project_dir / "storage" / "ds"),
-    )
-    assert "FDL_DATA_BUCKET" not in env
-    assert "FDL_DATA_PREFIX" not in env
-    assert not any(k.startswith("FDL_S3_") for k in env)
-
-
-# --- target_command ---
-
-
-def test_target_command_reads_top_level(fdl_project_dir):
-    """target_command returns top-level command from fdl.toml."""
-    from fdl.config import target_command
-
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    set_value("command", "python main.py", path)
-    set_value("targets.default.url", "/tmp/test", path)
-    assert target_command("default", fdl_project_dir) == "python main.py"
-
-
-def test_target_command_target_overrides_top_level(fdl_project_dir):
-    """targets.<name>.command takes precedence over top-level command."""
-    from fdl.config import target_command
-
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    set_value("command", "python main.py", path)
-    set_value("targets.default.url", "/tmp/test", path)
-    set_value("targets.default.command", "python custom.py", path)
-    assert target_command("default", fdl_project_dir) == "python custom.py"
-
-
-def test_target_command_returns_none_when_unset(fdl_project_dir):
-    """target_command returns None when neither target nor top-level command is set."""
-    from fdl.config import target_command
-
-    path = fdl_project_dir / "fdl.toml"
-    set_value("name", "ds", path)
-    set_value("targets.default.url", "/tmp/test", path)
-    assert target_command("default", fdl_project_dir) is None
+def _write(path, content: str) -> None:
+    path.write_text(content)
+
+
+class TestParseCatalogURL:
+    def test_sqlite_relative(self):
+        spec = parse_catalog_url("sqlite:///./foo.sqlite")
+        assert spec.scheme == "sqlite"
+        assert spec.path == "./foo.sqlite"
+        assert spec.pg is None
+
+    def test_sqlite_absolute(self):
+        spec = parse_catalog_url("sqlite:////abs/path.sqlite")
+        assert spec.scheme == "sqlite"
+        assert spec.path == "/abs/path.sqlite"
+
+    def test_postgres_full(self):
+        spec = parse_catalog_url(
+            "postgres://alice:s3cret@db.example.com:5433/fdl?schema=mart"
+        )
+        assert spec.scheme == "postgres"
+        assert spec.pg == PgConnInfo(
+            host="db.example.com",
+            port=5433,
+            database="fdl",
+            user="alice",
+            password="s3cret",
+            schema="mart",
+        )
+
+    def test_postgres_minimal(self):
+        spec = parse_catalog_url("postgres://localhost/fdl")
+        assert spec.scheme == "postgres"
+        assert spec.pg.host == "localhost"
+        assert spec.pg.port is None
+        assert spec.pg.database == "fdl"
+        assert spec.pg.user is None
+        assert spec.pg.password is None
+        assert spec.pg.schema is None
+
+    def test_postgres_password_with_special_chars(self):
+        # pa's s → URL-encoded as pa%27s%20s
+        spec = parse_catalog_url("postgres://u:pa%27s%20s@h/db")
+        assert spec.pg.password == "pa's s"
+
+    def test_postgresql_alias(self):
+        spec = parse_catalog_url("postgresql://h/db")
+        assert spec.scheme == "postgres"
+
+    def test_postgres_missing_db_errors(self):
+        with pytest.raises(ValueError, match="missing database"):
+            parse_catalog_url("postgres://h")
+
+    def test_unknown_scheme_errors(self):
+        with pytest.raises(ValueError, match="Unsupported"):
+            parse_catalog_url("mysql://h/db")
+
+    def test_no_scheme_errors(self):
+        with pytest.raises(ValueError, match="must include a scheme"):
+            parse_catalog_url("/abs/path.sqlite")
+
+
+class TestMetadataHelpers:
+    def test_metadata_url_expands_vars(self, fdl_project_dir, monkeypatch):
+        monkeypatch.setenv("MY_DB", "/tmp/x.sqlite")
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[metadata]\nurl = "sqlite://${MY_DB}"\n',
+        )
+        assert metadata_url(fdl_project_dir) == "sqlite:///tmp/x.sqlite"
+
+    def test_metadata_spec(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[metadata]\nurl = "postgres://h/db"\n',
+        )
+        spec = metadata_spec(fdl_project_dir)
+        assert isinstance(spec, CatalogSpec)
+        assert spec.scheme == "postgres"
+
+    def test_metadata_missing_errors(self, fdl_project_dir):
+        _write(fdl_project_dir / "fdl.toml", 'name = "x"\n')
+        with pytest.raises(KeyError, match=r"\[metadata\]\.url"):
+            metadata_url(fdl_project_dir)
+
+    def test_metadata_schema_override(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[metadata]\nurl = "sqlite:///x"\nschema = "s1"\n',
+        )
+        assert metadata_schema(fdl_project_dir) == "s1"
+
+    def test_metadata_schema_absent(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[metadata]\nurl = "sqlite:///x"\n',
+        )
+        assert metadata_schema(fdl_project_dir) is None
+
+
+class TestDataURL:
+    def test_data_url_expands(self, fdl_project_dir, monkeypatch):
+        monkeypatch.setenv("BUCKET", "mybucket")
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[data]\nurl = "s3://${BUCKET}/data"\n',
+        )
+        assert data_url(fdl_project_dir) == "s3://mybucket/data"
+
+    def test_data_missing_errors(self, fdl_project_dir):
+        _write(fdl_project_dir / "fdl.toml", 'name = "x"\n')
+        with pytest.raises(KeyError, match=r"\[data\]\.url"):
+            data_url(fdl_project_dir)
+
+
+class TestPublishes:
+    def test_publish_names_order(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[publishes.alpha]\nurl = "a"\n'
+            '[publishes.beta]\nurl = "b"\n',
+        )
+        assert publish_names(fdl_project_dir) == ["alpha", "beta"]
+
+    def test_publish_names_empty(self, fdl_project_dir):
+        _write(fdl_project_dir / "fdl.toml", 'name = "x"\n')
+        assert publish_names(fdl_project_dir) == []
+
+    def test_publish_url_expands(self, fdl_project_dir, monkeypatch):
+        monkeypatch.setenv("U", "https://pub.example.com")
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[publishes.default]\nurl = "${U}"\n',
+        )
+        assert publish_url("default", fdl_project_dir) == "https://pub.example.com"
+
+    def test_publish_public_url(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[publishes.default]\n'
+            'url = "s3://b/p"\n'
+            'public_url = "https://cdn.example.com"\n',
+        )
+        assert (
+            publish_public_url("default", fdl_project_dir)
+            == "https://cdn.example.com"
+        )
+
+    def test_publish_public_url_absent(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[publishes.default]\nurl = "s3://b/p"\n',
+        )
+        assert publish_public_url("default", fdl_project_dir) is None
+
+    def test_publish_url_unknown_errors(self, fdl_project_dir):
+        _write(fdl_project_dir / "fdl.toml", 'name = "x"\n')
+        with pytest.raises(KeyError):
+            publish_url("missing", fdl_project_dir)
+
+
+class TestResolvePublishName:
+    def test_single_implicit(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[publishes.only]\nurl = "a"\n',
+        )
+        assert resolve_publish_name(None, fdl_project_dir) == "only"
+
+    def test_multiple_requires_explicit(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[publishes.a]\nurl = "x"\n[publishes.b]\nurl = "y"\n',
+        )
+        with pytest.raises(ValueError, match="Multiple publishes"):
+            resolve_publish_name(None, fdl_project_dir)
+
+    def test_empty_errors(self, fdl_project_dir):
+        _write(fdl_project_dir / "fdl.toml", 'name = "x"\n')
+        with pytest.raises(KeyError, match="No \\[publishes"):
+            resolve_publish_name(None, fdl_project_dir)
+
+    def test_explicit_unknown_errors(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[publishes.only]\nurl = "a"\n',
+        )
+        with pytest.raises(KeyError):
+            resolve_publish_name("missing", fdl_project_dir)
+
+    def test_explicit_hit(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n[publishes.a]\nurl = "x"\n[publishes.b]\nurl = "y"\n',
+        )
+        assert resolve_publish_name("b", fdl_project_dir) == "b"
+
+
+class TestFdlEnvDictV11:
+    def test_sqlite_local_data(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[metadata]\nurl = "sqlite:///abs/x.sqlite"\n'
+            '[data]\nurl = "./data"\n',
+        )
+        env = fdl_env_dict(project_dir=fdl_project_dir)
+        assert env["FDL_CATALOG_URL"] == "sqlite:///abs/x.sqlite"
+        assert env["FDL_DATA_URL"] == "./data"
+        assert "FDL_CATALOG_PATH" in env
+        assert "FDL_DATA_BUCKET" not in env
+
+    def test_sqlite_s3_data(self, fdl_project_dir, monkeypatch):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[metadata]\nurl = "sqlite:////tmp/x.sqlite"\n'
+            '[data]\nurl = "s3://mybucket/prefix"\n'
+            's3_endpoint = "https://s3.example.com"\n'
+            's3_access_key_id = "K"\n'
+            's3_secret_access_key = "S"\n',
+        )
+        env = fdl_env_dict(project_dir=fdl_project_dir)
+        assert env["FDL_DATA_BUCKET"] == "mybucket"
+        assert env["FDL_DATA_PREFIX"] == "prefix"
+        assert env["FDL_S3_ENDPOINT"] == "https://s3.example.com"
+        assert env["FDL_S3_ACCESS_KEY_ID"] == "K"
+        assert env["FDL_S3_SECRET_ACCESS_KEY"] == "S"
+
+    def test_postgres_no_catalog_path(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[metadata]\nurl = "postgres://h/db"\n'
+            '[data]\nurl = "/tmp/data"\n',
+        )
+        env = fdl_env_dict(project_dir=fdl_project_dir)
+        assert env["FDL_CATALOG_URL"] == "postgres://h/db"
+        assert "FDL_CATALOG_PATH" not in env

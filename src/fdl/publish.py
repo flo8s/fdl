@@ -28,7 +28,7 @@ def publish(
             after upload (useful for debugging).
     """
     from fdl.config import (
-        data_url_v11,
+        data_url,
         datasource_name,
         find_project_dir,
         metadata_schema,
@@ -47,7 +47,7 @@ def publish(
 
     pub_url = publish_url(name, root)
     public_url = publish_public_url(name, root)
-    live_data_url = data_url_v11(root)
+    live_data_url = data_url(root)
     datasource = datasource_name(root)
 
     console.print(f"[bold]--- publish: {datasource} → {pub_url} ---[/bold]")

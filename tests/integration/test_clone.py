@@ -12,14 +12,14 @@ import fdl
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, FDL_DIR
 from fdl.config import (
     CatalogSpec,
-    data_url_v11,
+    data_url,
     metadata_spec,
     metadata_url,
 )
 from fdl.ducklake import (
     _convert_ducklake_catalog,
-    build_attach_sql_v11,
-    init_ducklake_v11,
+    build_attach_sql,
+    init_ducklake,
 )
 
 
@@ -43,12 +43,12 @@ def _build_published_dir(
         raw=f"sqlite:///{sqlite_path}",
         path=str(sqlite_path),
     )
-    init_ducklake_v11(spec, str(data_dir), name)
+    init_ducklake(spec, str(data_dir), name)
 
     # Populate with a row
     conn = duckdb.connect()
     try:
-        for s in build_attach_sql_v11(
+        for s in build_attach_sql(
             metadata=spec,
             data_url=str(data_dir),
             datasource=name,
@@ -96,14 +96,14 @@ class TestCloneLocal:
 
         # Helpers pick up the cloned config
         assert metadata_spec(fdl_project_dir).scheme == "sqlite"
-        assert data_url_v11(fdl_project_dir) == pub_data_url
+        assert data_url(fdl_project_dir) == pub_data_url
         assert metadata_url(fdl_project_dir).startswith("sqlite:///")
 
         # The cloned sqlite contains the row
         spec = metadata_spec(fdl_project_dir)
         conn = duckdb.connect()
         try:
-            for s in build_attach_sql_v11(
+            for s in build_attach_sql(
                 metadata=spec, data_url=pub_data_url, datasource="myds",
                 read_only=True,
             ):

@@ -4,7 +4,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://pypi.org/project/frozen-ducklake/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Manage [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) catalogs — place a DuckLake catalog + Parquet files on object storage and anyone can query with a single DuckDB `ATTACH`. No database server required.
+Manage [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) catalogs — keep a live DuckLake catalog (SQLite or PostgreSQL) and publish read-only DuckDB snapshots to object storage that anyone can query with a single DuckDB `ATTACH`.
 
 ## Quick Start
 
@@ -12,34 +12,50 @@ Manage [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) ca
 pip install frozen-ducklake
 
 mkdir my_dataset && cd my_dataset
-fdl init my_dataset
+fdl init my_dataset --publish-url ./dist
 ```
 
-Add data, push, and serve:
+Add data, then publish a frozen snapshot:
 
 ```bash
-fdl sql default "CREATE TABLE cities (name VARCHAR, country VARCHAR, pop INTEGER)"
-fdl sql default "INSERT INTO cities VALUES ('Tokyo', 'Japan', 14000000), ('Shanghai', 'China', 24900000)"
+fdl sql "CREATE TABLE cities (name VARCHAR, country VARCHAR, pop INTEGER)"
+fdl sql "INSERT INTO cities VALUES ('Tokyo', 'Japan', 14000000), ('Shanghai', 'China', 24900000)"
 
-fdl push default
-fdl serve default
+fdl publish
+fdl serve
 ```
 
 Query from DuckDB:
 
 ```bash
-duckdb -c "ATTACH 'ducklake:http://localhost:4001/my_dataset/ducklake.duckdb' AS my_dataset;
+duckdb -c "ATTACH 'ducklake:http://localhost:4001/ducklake.duckdb' AS my_dataset;
            SELECT * FROM my_dataset.main.cities ORDER BY pop DESC;"
 ```
 
+Clone an existing published catalog to start editing:
+
+```bash
+fdl clone https://data.example.com/my_dataset/
+fdl sql "SELECT COUNT(*) FROM cities"
+```
+
+## Concepts
+
+Three orthogonal sections in `fdl.toml`:
+
+- `[metadata]` — live catalog DB (SQLite or PostgreSQL), where writes happen
+- `[data]` — where Parquet files live (local path or `s3://`)
+- `[publishes.<name>]` — zero or more frozen-snapshot destinations
+
 ## Features
 
-- init / push / pull — Git-like catalog management with conflict detection
-- sql — Query and modify data directly from the command line
-- run — Execute any command (dbt, dlt, Python) with auto-injected storage credentials
-- serve — Built-in HTTP server with CORS and Range request support
-- Python API — Call the same operations in-process from Dagster, Airflow, etc.
-- Works with S3-compatible storage (AWS S3, Cloudflare R2, GCS, etc) and local directories
+- SQLite or PostgreSQL live catalog — PostgreSQL supports true concurrent writes
+- `fdl clone` / `fdl publish` — explicit frozen-snapshot workflow
+- `fdl run` — execute a pipeline then publish atomically on success
+- `fdl sql` / `fdl duckdb` — interactive querying of the live catalog
+- `fdl serve` — built-in HTTP server with CORS and Range support
+- Python API mirrors the CLI for Dagster / Airflow / notebook use
+- Works with S3-compatible storage (AWS S3, Cloudflare R2, GCS, etc.) and local directories
 
 ## Install
 

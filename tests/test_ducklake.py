@@ -1,4 +1,4 @@
-"""v0.11 ducklake helpers: postgres DSN, build_attach_sql_v11, init."""
+"""v0.11 ducklake helpers: postgres DSN, build_attach_sql, init."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import pytest
 from fdl.config import CatalogSpec, PgConnInfo
 from fdl.ducklake import (
     _libpq_escape_value,
-    build_attach_sql_v11,
-    init_ducklake_v11,
+    build_attach_sql,
+    init_ducklake,
     postgres_attach_dsn,
 )
 from fdl.s3 import S3Config
@@ -88,7 +88,7 @@ def _pg_spec(schema: str | None = None) -> CatalogSpec:
 
 class TestBuildAttachSqlV11:
     def test_sqlite_local_data(self):
-        stmts = build_attach_sql_v11(
+        stmts = build_attach_sql(
             metadata=_sqlite_spec("/tmp/x.sqlite"),
             data_url="/tmp/data",
             datasource="ds",
@@ -111,7 +111,7 @@ class TestBuildAttachSqlV11:
             bucket="b", endpoint="https://example.com",
             access_key_id="K", secret_access_key="S",
         )
-        stmts = build_attach_sql_v11(
+        stmts = build_attach_sql(
             metadata=_sqlite_spec("/tmp/x.sqlite"),
             data_url="s3://b/prefix",
             datasource="ds",
@@ -125,14 +125,14 @@ class TestBuildAttachSqlV11:
 
     def test_s3_requires_credentials(self):
         with pytest.raises(ValueError, match="data_s3_config"):
-            build_attach_sql_v11(
+            build_attach_sql(
                 metadata=_sqlite_spec("/tmp/x.sqlite"),
                 data_url="s3://b/p",
                 datasource="ds",
             )
 
     def test_postgres_prelude_and_schema(self):
-        stmts = build_attach_sql_v11(
+        stmts = build_attach_sql(
             metadata=_pg_spec(schema="mart"),
             data_url="/tmp/data",
             datasource="ds",
@@ -144,7 +144,7 @@ class TestBuildAttachSqlV11:
         assert "METADATA_SCHEMA 'mart'" in attach
 
     def test_postgres_schema_override(self):
-        stmts = build_attach_sql_v11(
+        stmts = build_attach_sql(
             metadata=_pg_spec(schema="from_url"),
             data_url="/tmp",
             datasource="ds",
@@ -155,7 +155,7 @@ class TestBuildAttachSqlV11:
         assert "'from_url'" not in attach
 
     def test_read_only_option(self):
-        stmts = build_attach_sql_v11(
+        stmts = build_attach_sql(
             metadata=_sqlite_spec("/tmp/x.sqlite"),
             data_url="/tmp/data",
             datasource="ds",
@@ -168,11 +168,11 @@ class TestBuildAttachSqlV11:
 class TestInitDucklakeV11Sqlite:
     def test_creates_sqlite_catalog(self, tmp_path):
         spec = _sqlite_spec(str(tmp_path / "lake.sqlite"))
-        init_ducklake_v11(spec, str(tmp_path / "data"), "ds")
+        init_ducklake(spec, str(tmp_path / "data"), "ds")
         assert (tmp_path / "lake.sqlite").exists()
 
     def test_idempotent(self, tmp_path):
         spec = _sqlite_spec(str(tmp_path / "lake.sqlite"))
-        init_ducklake_v11(spec, str(tmp_path / "data"), "ds")
+        init_ducklake(spec, str(tmp_path / "data"), "ds")
         # Second call must not error.
-        init_ducklake_v11(spec, str(tmp_path / "data"), "ds")
+        init_ducklake(spec, str(tmp_path / "data"), "ds")

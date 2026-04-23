@@ -12,7 +12,7 @@ import pytest
 import fdl
 from fdl import DUCKLAKE_FILE, FDL_DIR, META_JSON
 from fdl.config import CatalogSpec
-from fdl.ducklake import build_attach_sql_v11, init_ducklake_v11
+from fdl.ducklake import build_attach_sql, init_ducklake
 from fdl.meta import PushConflictError
 
 from tests.integration.conftest import BUCKET
@@ -39,11 +39,11 @@ def _setup_live_project(project_dir: Path, *, publish_url: str) -> None:
         raw=f"sqlite:///{sqlite_path}",
         path=str(sqlite_path),
     )
-    init_ducklake_v11(spec, str(data_dir), "ds")
+    init_ducklake(spec, str(data_dir), "ds")
 
     conn = duckdb.connect()
     try:
-        for s in build_attach_sql_v11(
+        for s in build_attach_sql(
             metadata=spec, data_url=str(data_dir), datasource="ds",
         ):
             conn.execute(s)
@@ -155,7 +155,7 @@ class TestPublishS3:
             raw=f"sqlite:///{sqlite_path}",
             path=str(sqlite_path),
         )
-        init_ducklake_v11(spec, str(data_dir), "ds")
+        init_ducklake(spec, str(data_dir), "ds")
 
         # First publish succeeds
         fdl.publish(project_dir=fdl_project_dir)
@@ -196,7 +196,7 @@ class TestPublishS3:
             raw=f"sqlite:///{sqlite_path}",
             path=str(sqlite_path),
         )
-        init_ducklake_v11(spec, str(data_dir), "ds")
+        init_ducklake(spec, str(data_dir), "ds")
 
         fdl.publish(project_dir=fdl_project_dir)
         moto_s3.put_object(
