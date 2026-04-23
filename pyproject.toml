@@ -9,6 +9,7 @@ authors = [{ name = "flo8s" }]
 dependencies = [
     "boto3>=1.35",
     "duckdb>=1.4.0,<1.5.0",
+    "psycopg[binary]>=3.2",
     "typer>=0.15",
 ]
 
