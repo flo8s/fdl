@@ -7,7 +7,7 @@ fdl separates two roles:
 - **Live catalog** (`[metadata]` + `[data]`) — where writes land. SQLite for single-writer setups, PostgreSQL for concurrent writers across hosts.
 - **Frozen snapshot** (`[publishes.<name>]`) — read-only DuckDB catalog uploaded to an HTTPS/S3 location for consumers.
 
-`fdl clone` is the inbound direction (frozen → live). `fdl publish` is the outbound direction (live → frozen).
+`fdl pull` is the inbound direction (frozen → live, SQLite only). `fdl publish` is the outbound direction (live → frozen).
 
 ## fdl run
 
@@ -78,7 +78,7 @@ fdl duckdb
 
 Use `--read-only` for safe browsing on shared data.
 
-## fdl publish / fdl clone
+## fdl publish / fdl pull
 
 Publish a frozen snapshot and serve it:
 
@@ -87,11 +87,13 @@ fdl publish                  # uploads frozen DuckDB + fdl.toml to publishes.<na
 fdl serve                    # HTTP-serves the local publish directory
 ```
 
-Clone a published catalog to start editing:
+Rebuild a local SQLite live catalog from the latest frozen snapshot at the publish destination (e.g. on a different machine that shares the same `[data].url`):
 
 ```bash
-fdl clone https://data.example.com/my_dataset/
+fdl pull
 fdl sql "SELECT count(*) FROM cities"
 ```
+
+`fdl pull` is SQLite-only. PostgreSQL live catalogs are the shared source of truth across hosts and are always up-to-date — there is nothing to pull into them.
 
 `fdl serve` starts an HTTP server with CORS and Range request support — everything DuckDB needs to `ATTACH` a remote DuckLake catalog.

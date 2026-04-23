@@ -66,12 +66,28 @@ class TestPublishLocal:
         data = tomllib.loads((dest / "fdl.toml").read_text())
         assert data["name"] == "ds"
 
-        # Second project clones from the publish dir
-        clone_dir = tmp_path / "clone"
-        clone_dir.mkdir()
-        fdl.clone(str(dest), project_dir=clone_dir)
-        assert (clone_dir / "fdl.toml").exists()
-        assert (clone_dir / FDL_DIR / "ducklake.sqlite").exists()
+        # A downstream project pulls from the publish dir to rebuild its
+        # local SQLite live catalog.
+        mirror = tmp_path / "mirror"
+        mirror.mkdir()
+        mirror_sqlite = mirror / FDL_DIR / "ducklake.sqlite"
+        src_data = (fdl_project_dir / FDL_DIR / "data").resolve()
+        (mirror / "fdl.toml").write_text(
+            f'name = "ds"\n\n'
+            f"[metadata]\n"
+            f'url = "sqlite:///{mirror_sqlite.resolve()}"\n\n'
+            f"[data]\n"
+            f'url = "{src_data}"\n\n'
+            f"[publishes.default]\n"
+            f'url = "{dest}"\n'
+        )
+
+        fdl.pull(project_dir=mirror)
+
+        assert mirror_sqlite.exists()
+        with fdl.connect(project_dir=mirror) as conn:
+            rows = conn.execute("SELECT x FROM t").fetchall()
+        assert rows == [(7,)]
 
     def test_intermediate_cleanup(self, fdl_project_dir, tmp_path):
         dest = tmp_path / "pub"

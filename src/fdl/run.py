@@ -67,7 +67,7 @@ def run_command(
     if spec.scheme in ("sqlite", "duckdb") and spec.path:
         if not Path(spec.path).exists():
             raise FileNotFoundError(
-                f"{spec.path} not found. Run 'fdl init' or 'fdl clone' first."
+                f"{spec.path} not found. Run 'fdl init' or 'fdl pull' first."
             )
 
     env = os.environ.copy()

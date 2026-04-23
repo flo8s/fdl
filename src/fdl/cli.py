@@ -95,21 +95,17 @@ def init(
 
 
 @app.command()
-def clone(
-    url: str = typer.Argument(..., help="Base URL of a published catalog"),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite existing local fdl.toml / catalog"
+def pull(
+    name: str = typer.Argument(
+        None, help="Publish name (default: sole [publishes.*] entry)"
     ),
 ) -> None:
-    """Clone a published frozen DuckLake into a new local live catalog."""
+    """Rebuild the local SQLite live catalog from a publish target."""
     import fdl
 
     try:
-        fdl.clone(url, force=force)
-    except FileExistsError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except (ValueError, FileNotFoundError) as e:
+        fdl.pull(name)
+    except (KeyError, ValueError, FileNotFoundError) as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
 

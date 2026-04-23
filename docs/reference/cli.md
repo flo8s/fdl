@@ -1,13 +1,13 @@
 # CLI Reference
 
-All commands (except `init` and `clone`) discover `fdl.toml` by walking up from the current working directory, so they can be run from any subdirectory of your project. The same lookup is also used by the [Python API](python-api.md).
+All commands except `init` discover `fdl.toml` by walking up from the current working directory, so they can be run from any subdirectory of your project. The same lookup is also used by the [Python API](python-api.md).
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | [`init`](#init) | Initialize a new project |
-| [`clone`](#clone) | Clone a published frozen DuckLake into a new project |
+| [`pull`](#pull) | Rebuild the local SQLite live catalog from a publish target |
 | [`publish`](#publish) | Convert the live catalog to frozen DuckDB and upload |
 | [`run`](#run) | Run a pipeline command and publish on success |
 | [`sql`](#sql) | Execute SQL against the live catalog |
@@ -35,20 +35,27 @@ fdl init [NAME] [--metadata-url URL] [--data-url URL] [--publish-url URL] [--pub
 
 When `--metadata-url` is a `postgres://` URL, the target database must already exist. fdl creates the schema via `CREATE SCHEMA IF NOT EXISTS`; it does not run `CREATE DATABASE` (which requires superuser privileges and runs outside a transaction).
 
-## clone
+## pull
 
-Clone a published frozen DuckLake into a new local live catalog.
+Rebuild the local SQLite live catalog from a publish target.
 
 ```
-fdl clone URL [--force]
+fdl pull [NAME]
 ```
 
-| Argument / Option | Description |
+| Argument | Description |
 |---|---|
-| `URL` | Base URL of a published catalog |
-| `--force`, `-f` | Overwrite an existing local fdl.toml / catalog |
+| `NAME` | Publish name (default: sole `[publishes.*]` entry) |
 
-Expects both `<URL>/fdl.toml` and `<URL>/ducklake.duckdb` to be fetchable at the given base. Works with HTTPS, `s3://`, and local paths.
+Reads `[publishes.<NAME>].url` from `fdl.toml`, fetches `<url>/ducklake.duckdb`, and converts it into the SQLite file referenced by `[metadata].url`, overwriting any existing catalog. Works with HTTPS, `s3://`, and local paths.
+
+SQLite-only. When `[metadata].url` points at PostgreSQL, pull refuses with:
+
+```
+'fdl pull' is only applicable for SQLite metadata. PostgreSQL is always up-to-date by design.
+```
+
+PostgreSQL live catalogs are the shared source of truth across hosts; there is nothing to "pull" into them. See [Configuration](../guide/configuration.md) for migration between SQLite and PostgreSQL.
 
 ## publish
 
@@ -68,7 +75,7 @@ fdl publish [NAME] [--force]
 For S3 destinations, fdl uploads the catalog with an HTTP `If-Match` precondition using the ETag recorded from the previous publish. If another client has published since, the S3 server rejects the upload with `412 Precondition Failed`:
 
 ```
-Remote has been updated since the last publish. Run 'fdl clone --force' first, or pass --force to override.
+Remote has been updated since the last publish. Run 'fdl pull' first, or pass --force to override.
 ```
 
 The first publish uses `If-None-Match: *`, which succeeds only when no catalog is present. Use `--force` to skip the precondition. Local destinations are assumed single-user and skip conflict detection.
@@ -111,7 +118,7 @@ Execute a SQL query against the live DuckLake catalog.
 fdl sql QUERY
 ```
 
-Requires a reachable live catalog (`fdl init` or `fdl clone` first). For postgres metadata, the database must be reachable.
+Requires a reachable live catalog (`fdl init` or `fdl pull` first). For postgres metadata, the database must be reachable.
 
 Examples:
 

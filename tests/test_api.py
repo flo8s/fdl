@@ -1,4 +1,4 @@
-"""Tests for the public Python API (fdl.init, .clone, .publish, .run, .connect)."""
+"""Tests for the public Python API (fdl.init, .pull, .publish, .run, .connect)."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ def _init_with_publish(project_dir: Path, *, publish_to: Path) -> None:
 
 
 class TestRoundTrip:
-    def test_init_publish_clone(self, fdl_project_dir, tmp_path_factory):
-        """init → connect+write → publish → clone → connect+read."""
+    def test_init_publish_pull(self, fdl_project_dir, tmp_path_factory):
+        """init → connect+write → publish → pull (mirror project) → read."""
         publish_to = tmp_path_factory.mktemp("remote")
         _init_with_publish(fdl_project_dir, publish_to=publish_to)
 
@@ -27,10 +27,24 @@ class TestRoundTrip:
 
         fdl.publish(project_dir=fdl_project_dir)
 
-        clone_root = tmp_path_factory.mktemp("clone")
-        fdl.clone(str(publish_to), project_dir=clone_root)
+        from fdl import FDL_DIR
 
-        with fdl.connect(project_dir=clone_root) as conn:
+        mirror_root = tmp_path_factory.mktemp("mirror")
+        mirror_sqlite = mirror_root / FDL_DIR / "ducklake.sqlite"
+        src_data = (fdl_project_dir / FDL_DIR / "data").resolve()
+        (mirror_root / "fdl.toml").write_text(
+            f'name = "mydata"\n\n'
+            f"[metadata]\n"
+            f'url = "sqlite:///{mirror_sqlite.resolve()}"\n\n'
+            f"[data]\n"
+            f'url = "{src_data}"\n\n'
+            f"[publishes.default]\n"
+            f'url = "{publish_to}"\n'
+        )
+
+        fdl.pull(project_dir=mirror_root)
+
+        with fdl.connect(project_dir=mirror_root) as conn:
             rows = conn.execute("SELECT x FROM t ORDER BY x").fetchall()
         assert rows == [(1,), (2,), (3,)]
 
@@ -152,10 +166,10 @@ def test_public_api_surface():
         "FDL_DIR",
         "META_JSON",
         # Python API
-        "clone",
         "connect",
         "init",
         "publish",
+        "pull",
         "run",
     }
     assert set(fdl.__all__) == expected

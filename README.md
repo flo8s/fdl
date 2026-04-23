@@ -32,10 +32,10 @@ duckdb -c "ATTACH 'ducklake:http://localhost:4001/ducklake.duckdb' AS my_dataset
            SELECT * FROM my_dataset.main.cities ORDER BY pop DESC;"
 ```
 
-Clone an existing published catalog to start editing:
+Refresh a local SQLite live catalog from the latest frozen snapshot:
 
 ```bash
-fdl clone https://data.example.com/my_dataset/
+fdl pull                     # rebuilds .fdl/ducklake.sqlite from [publishes.*]
 fdl sql "SELECT COUNT(*) FROM cities"
 ```
 
@@ -50,7 +50,7 @@ Three orthogonal sections in `fdl.toml`:
 ## Features
 
 - SQLite or PostgreSQL live catalog — PostgreSQL supports true concurrent writes
-- `fdl clone` / `fdl publish` — explicit frozen-snapshot workflow
+- `fdl pull` / `fdl publish` — explicit frozen-snapshot workflow (SQLite-only for pull)
 - `fdl run` — execute a pipeline then publish atomically on success
 - `fdl sql` / `fdl duckdb` — interactive querying of the live catalog
 - `fdl serve` — built-in HTTP server with CORS and Range support

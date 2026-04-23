@@ -133,7 +133,7 @@ def _put_with_precondition(
         if code == "PreconditionFailed" or status == 412:
             raise PushConflictError(
                 "Remote has been updated since the last publish. "
-                "Run 'fdl clone --force' first, or pass --force to override."
+                "Run 'fdl pull' first, or pass --force to override."
             ) from e
         raise
     return response["ETag"]

@@ -71,7 +71,18 @@ Pick the metadata backend based on how many writers you need:
 - **SQLite** — single host, single writer. Good for individual development and CI/CD runs where each run is ephemeral and coordinated externally (e.g. GitHub Actions `concurrency:`).
 - **PostgreSQL** — multiple writers across hosts, shared live catalog. Required for Dagster parallel runs, multi-developer projects, and any setup where writes can overlap.
 
-Migrating between backends uses DuckLake's built-in `COPY FROM DATABASE`:
+### fdl pull / fdl publish by backend
+
+| Live catalog | `fdl publish` | `fdl pull` |
+|---|---|---|
+| SQLite | ✅ | ✅ |
+| PostgreSQL | ✅ | ❌ (refused — shared, always up-to-date) |
+
+`fdl pull` rebuilds a local SQLite file from the latest frozen snapshot at `[publishes.*]`. PostgreSQL lives are the shared source of truth across hosts, so pulling into them would overwrite other writers' state; pull refuses with a clear error in that case.
+
+### Migrating between backends
+
+DuckLake ships with `COPY FROM DATABASE` which copies both metadata and the data-file registry wholesale:
 
 ```sql
 ATTACH 'ducklake:sqlite:.fdl/ducklake.sqlite' AS sqlite_lake;
@@ -79,7 +90,7 @@ ATTACH 'ducklake:postgres:dbname=ducklake host=...' AS pg_lake (DATA_PATH 's3://
 COPY FROM DATABASE sqlite_lake TO pg_lake;
 ```
 
-Then edit `metadata.url` to the new backend.
+Then edit `metadata.url` to the new backend. fdl does not provide a dedicated migration command — DuckLake's built-in is enough.
 
 ## Environment separation
 

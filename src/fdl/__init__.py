@@ -37,9 +37,9 @@ META_JSON = "meta.json"
 # the submodule attributes on the ``fdl`` package.
 # ---------------------------------------------------------------------------
 
-from fdl.clone import clone as _do_clone  # noqa: E402
 from fdl.init_project import init_project as _do_init  # noqa: E402
 from fdl.publish import publish as _do_publish  # noqa: E402
+from fdl.pull import pull as _do_pull  # noqa: E402
 from fdl.run import run_command as _run_command  # noqa: E402
 
 
@@ -66,14 +66,16 @@ def init(
     )
 
 
-def clone(
-    url: str,
+def pull(
+    name: str | None = None,
     *,
-    force: bool = False,
     project_dir: Path | None = None,
 ) -> None:
-    """Clone a published frozen DuckLake into a new local live catalog."""
-    _do_clone(url, project_dir=project_dir, force=force)
+    """Rebuild the local SQLite live catalog from a publish target.
+
+    SQLite-only. Rejected when ``[metadata].url`` points at PostgreSQL.
+    """
+    _do_pull(name, project_dir=project_dir)
 
 
 def publish(
@@ -116,9 +118,9 @@ __all__ = [
     "FDL_DIR",
     "META_JSON",
     # Python API
-    "clone",
     "connect",
     "init",
     "publish",
+    "pull",
     "run",
 ]
