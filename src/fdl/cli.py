@@ -127,6 +127,29 @@ def clone(
 
 
 @app.command()
+def publish(
+    name: str = typer.Argument(
+        None, help="Publish name (default: sole [publishes.*] entry)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Override ETag precondition on S3 upload"
+    ),
+) -> None:
+    """Convert the live catalog to a frozen DuckDB and upload it."""
+    import fdl
+    from fdl.meta import PushConflictError
+
+    try:
+        fdl.publish(name, force=force)
+    except PushConflictError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+    except (KeyError, ValueError, FileNotFoundError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+
+
+@app.command()
 def pull(
     source: str = typer.Argument(..., help="Target name (e.g. default)"),
     force: bool = typer.Option(

@@ -256,6 +256,7 @@ def test_public_api_surface() -> None:
         "clone",
         "connect",
         "init",
+        "publish",
         "pull",
         "push",
         "run",

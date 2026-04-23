@@ -65,6 +65,7 @@ def default_target_url() -> str:
 # ---------------------------------------------------------------------------
 
 from fdl.clone import clone as _do_clone  # noqa: E402
+from fdl.publish import publish as _do_publish  # noqa: E402
 from fdl.push import do_push as _do_push  # noqa: E402
 from fdl.pull import (  # noqa: E402
     do_pull as _do_pull,
@@ -304,6 +305,24 @@ def clone(
     _do_clone(url, project_dir=project_dir, force=force)
 
 
+def publish(
+    name: str | None = None,
+    *,
+    force: bool = False,
+    project_dir: Path | None = None,
+) -> None:
+    """Convert the live catalog to a frozen DuckDB and upload it.
+
+    Args:
+        name: Publish name from ``[publishes.<name>]``. Defaults to the sole
+            entry when only one is defined.
+        force: Override ETag precondition checks for S3 destinations.
+        project_dir: Project directory containing fdl.toml. Defaults to the
+            nearest ancestor that contains one.
+    """
+    _do_publish(name, project_dir=project_dir, force=force)
+
+
 @contextmanager
 def connect(
     target: str,
@@ -355,6 +374,7 @@ __all__ = [
     "clone",
     "connect",
     "init",
+    "publish",
     "pull",
     "push",
     "run",
