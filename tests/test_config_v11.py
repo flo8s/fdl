@@ -8,6 +8,7 @@ from fdl.config import (
     CatalogSpec,
     PgConnInfo,
     data_url_v11,
+    fdl_env_dict_v11,
     metadata_schema,
     metadata_spec,
     metadata_url,
@@ -217,3 +218,46 @@ class TestResolvePublishName:
             'name = "x"\n[publishes.a]\nurl = "x"\n[publishes.b]\nurl = "y"\n',
         )
         assert resolve_publish_name("b", fdl_project_dir) == "b"
+
+
+class TestFdlEnvDictV11:
+    def test_sqlite_local_data(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[metadata]\nurl = "sqlite:///abs/x.sqlite"\n'
+            '[data]\nurl = "./data"\n',
+        )
+        env = fdl_env_dict_v11(project_dir=fdl_project_dir)
+        assert env["FDL_CATALOG_URL"] == "sqlite:///abs/x.sqlite"
+        assert env["FDL_DATA_URL"] == "./data"
+        assert "FDL_CATALOG_PATH" in env
+        assert "FDL_DATA_BUCKET" not in env
+
+    def test_sqlite_s3_data(self, fdl_project_dir, monkeypatch):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[metadata]\nurl = "sqlite:////tmp/x.sqlite"\n'
+            '[data]\nurl = "s3://mybucket/prefix"\n'
+            's3_endpoint = "https://s3.example.com"\n'
+            's3_access_key_id = "K"\n'
+            's3_secret_access_key = "S"\n',
+        )
+        env = fdl_env_dict_v11(project_dir=fdl_project_dir)
+        assert env["FDL_DATA_BUCKET"] == "mybucket"
+        assert env["FDL_DATA_PREFIX"] == "prefix"
+        assert env["FDL_S3_ENDPOINT"] == "https://s3.example.com"
+        assert env["FDL_S3_ACCESS_KEY_ID"] == "K"
+        assert env["FDL_S3_SECRET_ACCESS_KEY"] == "S"
+
+    def test_postgres_no_catalog_path(self, fdl_project_dir):
+        _write(
+            fdl_project_dir / "fdl.toml",
+            'name = "x"\n'
+            '[metadata]\nurl = "postgres://h/db"\n'
+            '[data]\nurl = "/tmp/data"\n',
+        )
+        env = fdl_env_dict_v11(project_dir=fdl_project_dir)
+        assert env["FDL_CATALOG_URL"] == "postgres://h/db"
+        assert "FDL_CATALOG_PATH" not in env

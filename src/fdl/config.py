@@ -206,6 +206,51 @@ def publish_public_url(name: str, project_dir: Path | None = None) -> str | None
     return None
 
 
+def fdl_env_dict_v11(
+    *,
+    publish_name: str | None = None,  # noqa: ARG001 — reserved for future use
+    project_dir: Path | None = None,
+) -> dict[str, str]:
+    """FDL_* env vars for subprocesses, derived from v0.11 [metadata]/[data].
+
+    Always-present keys:
+      - FDL_CATALOG_URL   — [metadata].url verbatim (post-expansion)
+      - FDL_DATA_URL      — [data].url verbatim (post-expansion)
+
+    SQLite-only:
+      - FDL_CATALOG_PATH  — absolute path to the .sqlite file
+
+    S3-data-only:
+      - FDL_DATA_BUCKET, FDL_DATA_PREFIX
+      - FDL_S3_ENDPOINT, FDL_S3_ENDPOINT_HOST,
+        FDL_S3_ACCESS_KEY_ID, FDL_S3_SECRET_ACCESS_KEY
+    """
+    project_dir = project_dir or find_project_dir()
+    m_url = metadata_url(project_dir)
+    d_url = data_url_v11(project_dir)
+    result: dict[str, str] = {
+        "FDL_CATALOG_URL": m_url,
+        "FDL_DATA_URL": d_url,
+    }
+    spec = parse_catalog_url(m_url)
+    if spec.scheme == "sqlite" and spec.path:
+        result["FDL_CATALOG_PATH"] = str(Path(spec.path).resolve())
+    if d_url.startswith("s3://"):
+        bucket, _, prefix = d_url.removeprefix("s3://").partition("/")
+        result["FDL_DATA_BUCKET"] = bucket
+        result["FDL_DATA_PREFIX"] = prefix
+        s3 = data_s3_config(project_dir)
+        if s3 is not None:
+            if s3.endpoint:
+                result["FDL_S3_ENDPOINT"] = s3.endpoint
+                result["FDL_S3_ENDPOINT_HOST"] = s3.endpoint_host
+            if s3.access_key_id:
+                result["FDL_S3_ACCESS_KEY_ID"] = s3.access_key_id
+            if s3.secret_access_key:
+                result["FDL_S3_SECRET_ACCESS_KEY"] = s3.secret_access_key
+    return result
+
+
 def publish_s3_config(
     name: str, project_dir: Path | None = None
 ) -> "S3Config | None":
