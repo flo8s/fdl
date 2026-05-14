@@ -18,3 +18,7 @@ site/
 
 # Environment
 .env
+
+# Editor
+.vscode/
+.idea/
