@@ -112,6 +112,12 @@ def build_attach_sql(
     if read_only:
         opts.append("READ_ONLY")
     if _is_sqlite_catalog(ducklake_path):
+        # DuckDB 1.5's DuckLake extension passes a `storage_version` option
+        # to the underlying SQLite ATTACH when it auto-detects the backend
+        # from a bare `ducklake:<file>` path, which the SQLite extension
+        # rejects ("Unsupported parameter for SQLite Attach: storage_version").
+        # Declaring META_TYPE 'sqlite' explicitly avoids that detection path.
+        opts.append("META_TYPE 'sqlite'")
         opts.extend(SQLITE_CATALOG_OPTIONS)
     stmts.append(
         f"ATTACH 'ducklake:{_sql_escape(str(ducklake_path))}' AS {name} "
@@ -239,6 +245,12 @@ def _convert_ducklake_catalog(
         dst_file.with_name(dst_file.name + ".tmp-journal"),
     ]
     try:
+        # Copy the catalog by raw-attaching both sides and duplicating the
+        # ducklake_* metadata tables. Inline data (DuckLake v1.0 keeps small
+        # writes in ducklake_inlined_data_* instead of parquet) is copied
+        # as-is, not flushed: flushing writes parquet to DATA_PATH, which push
+        # later rewrites to the published location, so it would go missing on
+        # pull.
         conn = duckdb.connect(":memory:")
         conn.execute("INSTALL ducklake; LOAD ducklake;")
         if src_type == "sqlite" or dst_type == "sqlite":
@@ -263,16 +275,47 @@ def _convert_ducklake_catalog(
             dst_attach += " (TYPE sqlite)"
         conn.execute(dst_attach)
 
+        # fdl keeps ducklake_* metadata in the default 'main' schema (a SQLite
+        # live catalog cannot use any other). If a DuckDB/PostgreSQL-backed
+        # source placed it elsewhere via METADATA_SCHEMA, fail loudly rather
+        # than silently copying nothing from a non-existent main.<table>.
+        meta_schema = conn.execute(
+            "SELECT table_schema FROM information_schema.tables "
+            f"WHERE table_catalog='{SRC}' AND table_name='ducklake_metadata' "
+            "LIMIT 1"
+        ).fetchone()
+        if meta_schema is not None and meta_schema[0] != "main":
+            conn.close()
+            raise ValueError(
+                f"DuckLake metadata is in schema {meta_schema[0]!r}; fdl only "
+                "supports the default 'main' METADATA_SCHEMA."
+            )
+
         tables = conn.execute(
             "SELECT table_name FROM information_schema.tables "
             f"WHERE table_catalog='{SRC}'"
         ).fetchall()
+        dst_tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                f"WHERE table_catalog='{DST}'"
+            ).fetchall()
+        }
         for (table_name,) in tables:
-            conn.execute(f"DELETE FROM {DST}.main.{table_name}")
-            conn.execute(
-                f"INSERT INTO {DST}.main.{table_name} "
-                f"SELECT * FROM {SRC}.main.{table_name}"
-            )
+            # Overwrite tables the fresh dst already provisions; create the
+            # rest (e.g. ducklake_inlined_data_*) via CTAS.
+            if table_name in dst_tables:
+                conn.execute(f"DELETE FROM {DST}.main.{table_name}")
+                conn.execute(
+                    f"INSERT INTO {DST}.main.{table_name} "
+                    f"SELECT * FROM {SRC}.main.{table_name}"
+                )
+            else:
+                conn.execute(
+                    f"CREATE TABLE {DST}.main.{table_name} AS "
+                    f"SELECT * FROM {SRC}.main.{table_name}"
+                )
 
         conn.execute(f"CHECKPOINT {DST}")
         conn.close()

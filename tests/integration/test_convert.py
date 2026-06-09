@@ -3,11 +3,16 @@
 from pathlib import Path
 
 import duckdb
+import pytest
 from typer.testing import CliRunner
 
 from fdl import DUCKLAKE_FILE, DUCKLAKE_SQLITE, fdl_target_dir
 from fdl.cli import app
-from fdl.ducklake import convert_duckdb_to_sqlite, convert_sqlite_to_duckdb
+from fdl.ducklake import (
+    _convert_ducklake_catalog,
+    convert_duckdb_to_sqlite,
+    convert_sqlite_to_duckdb,
+)
 
 
 def _list_tables(catalog_file: Path, type_: str) -> list[str]:
@@ -89,3 +94,32 @@ def test_convert_duckdb_to_sqlite_is_noop_when_no_duckdb(fdl_project_dir: Path):
     convert_duckdb_to_sqlite(fdl_project_dir, "default")
     assert (dist_dir / DUCKLAKE_SQLITE).exists()
     assert not (dist_dir / DUCKLAKE_FILE).exists()
+
+
+def test_convert_rejects_non_main_metadata_schema(tmp_path: Path):
+    """A source whose ducklake_* metadata lives outside 'main' (METADATA_SCHEMA)
+    is rejected with a clear error instead of silently producing an empty
+    catalog."""
+    data_dir = tmp_path / "data"
+    src = tmp_path / DUCKLAKE_FILE
+    dst = tmp_path / DUCKLAKE_SQLITE
+
+    conn = duckdb.connect()
+    conn.execute("INSTALL ducklake; LOAD ducklake;")
+    conn.execute(
+        f"ATTACH 'ducklake:{src}' AS lake "
+        f"(DATA_PATH '{data_dir}', METADATA_SCHEMA 'custom_meta')"
+    )
+    conn.execute("CREATE TABLE lake.main.t (x INTEGER)")
+    conn.execute("INSERT INTO lake.main.t VALUES (1)")
+    conn.execute("DETACH lake")
+    conn.close()
+
+    with pytest.raises(ValueError, match="custom_meta"):
+        _convert_ducklake_catalog(
+            src,
+            dst,
+            src_type="duckdb",
+            dst_type="sqlite",
+            data_path=str(data_dir),
+        )
