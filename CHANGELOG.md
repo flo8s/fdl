@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.10.2 (2026-06-09)
+
+### Bug Fixes
+
+- Support DuckDB 1.5.2 (DuckLake v1.0) SQLite catalogs
+  ([`7613d59`](https://github.com/flo8s/fdl/commit/7613d593e33687153e3971dfe31fe9d75707159f))
+
+duckdb 制約を >=1.5.2,<1.6 に更新。
+
+build_attach_sql の SQLite 分岐で META_TYPE 'sqlite' を明示する。DuckDB 1.5 の DuckLake 拡張は bare
+  'ducklake:<file>' の自動判定時に SQLite ATTACH へ storage_version を渡して 'Unsupported parameter for SQLite
+  Attach: storage_version' で失敗するため。
+
+_convert_ducklake_catalog では inline データを flush せず、ducklake_inlined_data_* テーブルを CTAS でそのままコピーして
+  inline 行をカタログ内に保持する。push は DATA_PATH を公開先に書き換えるため、flush で parquet 化すると誤った場所に書かれ pull 時に欠落するのを防ぐ。
+
+concurrency テストの attacher も SQLite では META_TYPE 'sqlite' + WAL を明示する。
+
+### Chores
+
+- Sync uv.lock with version 0.10.1
+  ([`36f5cf5`](https://github.com/flo8s/fdl/commit/36f5cf57ebb69df94222288945d7f07dcab79724))
+
+
 ## v0.10.1 (2026-04-22)
 
 ### Bug Fixes

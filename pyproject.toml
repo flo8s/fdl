@@ -21,6 +21,7 @@ Changelog = "https://fdl.flo8s.com/changelog/"
 [project.scripts]
 fdl = "fdl.cli:main"
 
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -32,6 +33,7 @@ packages = ["src/fdl"]
 version_toml = ["pyproject.toml:project.version"]
 allow_zero_version = true
 major_on_zero = false
+
 
 [dependency-groups]
 dev = [
