@@ -49,7 +49,16 @@ while not go.exists():
     time.sleep(0.01)
 
 try:
-    conn.execute(f"ATTACH 'ducklake:{catalog}' AS ds")
+    # DuckDB 1.5's DuckLake extension rejects a bare `ducklake:<file>`
+    # SQLite attach (it forwards an unsupported `storage_version` param),
+    # so declare META_TYPE 'sqlite' plus the WAL options fdl uses for
+    # concurrent SQLite readers, mirroring build_attach_sql.
+    opts = (
+        "(META_TYPE 'sqlite', META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000)"
+        if kind == "sqlite"
+        else ""
+    )
+    conn.execute(f"ATTACH 'ducklake:{catalog}' AS ds {opts}")
     conn.execute("USE ds")
     # Hold the attach long enough that the peer's ATTACH also lands
     # inside this critical section.
