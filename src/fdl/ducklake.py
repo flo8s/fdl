@@ -275,15 +275,27 @@ def _convert_ducklake_catalog(
             dst_attach += " (TYPE sqlite)"
         conn.execute(dst_attach)
 
+        # DuckLake keeps its ducklake_* tables in METADATA_SCHEMA (default
+        # 'main'), so read from whichever schema src actually uses instead of
+        # assuming 'main'. The fresh dst is provisioned without METADATA_SCHEMA,
+        # so its metadata always lives in 'main' — write there regardless of
+        # src's schema.
+        row = conn.execute(
+            "SELECT table_schema FROM information_schema.tables "
+            f"WHERE table_catalog='{SRC}' AND table_name='ducklake_metadata' "
+            "LIMIT 1"
+        ).fetchone()
+        src_schema = row[0] if row else "main"
+
         tables = conn.execute(
             "SELECT table_name FROM information_schema.tables "
-            f"WHERE table_catalog='{SRC}'"
+            f"WHERE table_catalog='{SRC}' AND table_schema='{_sql_escape(src_schema)}'"
         ).fetchall()
         dst_tables = {
             row[0]
             for row in conn.execute(
                 "SELECT table_name FROM information_schema.tables "
-                f"WHERE table_catalog='{DST}'"
+                f"WHERE table_catalog='{DST}' AND table_schema='main'"
             ).fetchall()
         }
         for (table_name,) in tables:
@@ -293,12 +305,12 @@ def _convert_ducklake_catalog(
                 conn.execute(f"DELETE FROM {DST}.main.{table_name}")
                 conn.execute(
                     f"INSERT INTO {DST}.main.{table_name} "
-                    f"SELECT * FROM {SRC}.main.{table_name}"
+                    f'SELECT * FROM {SRC}."{src_schema}".{table_name}'
                 )
             else:
                 conn.execute(
                     f"CREATE TABLE {DST}.main.{table_name} AS "
-                    f"SELECT * FROM {SRC}.main.{table_name}"
+                    f'SELECT * FROM {SRC}."{src_schema}".{table_name}'
                 )
 
         conn.execute(f"CHECKPOINT {DST}")
