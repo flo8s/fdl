@@ -39,6 +39,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def callback(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False,
         "--version",
@@ -49,10 +50,12 @@ def callback(
     ),
 ) -> None:
     """fdl: DuckLake catalog management CLI"""
-    import click
-
-    ctx = click.get_current_context()
+    # Use the Typer-injected context rather than click.get_current_context():
+    # under Typer 0.26+ the callback runs outside an active click context when
+    # a subcommand is invoked, so get_current_context() raises RuntimeError.
     if ctx.invoked_subcommand is None:
+        import click
+
         click.echo(ctx.get_help())
 
 
