@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.10.3 (2026-06-10)
+
+### Bug Fixes
+
+- Support Typer 0.26+ in the root callback
+  ([`546c9b7`](https://github.com/flo8s/fdl/commit/546c9b7f37c1431cee70132071cde5f34e1a82b2))
+
+Typer 0.26 invokes the root callback outside an active click context when a subcommand is
+  dispatched, so click.get_current_context() raised 'There is no active click context.' and broke
+  every subcommand. Use the Typer-injected ctx parameter instead, and bump the dev lock to typer
+  0.26.7.
+
+
 ## v0.10.2 (2026-06-09)
 
 ### Bug Fixes
