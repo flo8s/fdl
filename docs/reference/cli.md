@@ -75,6 +75,14 @@ Requires an existing local catalog. `fdl push` does not create one; run `fdl ini
 
 The local catalog is SQLite; push converts it to DuckDB format (the distribution format) before upload. Push also updates `ducklake_metadata.data_path` in the shipped catalog to match the current `public_url` in `fdl.toml`, so changing `public_url` and running `fdl push` is sufficient to redeploy at a new origin. Pull reverses the conversion, converting the downloaded DuckDB back to SQLite locally.
 
+### Snapshot expiration
+
+Before converting the catalog, push expires DuckLake snapshots older than `maintenance.snapshot_retention_days` (default: 7 days; the latest snapshot is always kept) and deletes the data files those snapshots referenced, including orphaned files left behind by crashed writes.
+
+Without expiration the catalog grows linearly with build count: every `CREATE OR REPLACE TABLE` leaves a dead table version (and its inlined-data table) behind, which slows down the SQLite ↔ DuckDB conversion in push/pull. Expiration keeps the catalog bounded to the retention window.
+
+Note that expiring snapshots removes time travel history older than the retention period, and clients still reading a catalog copy published before the retention window may fail to resolve deleted data files. Set `maintenance.snapshot_retention_days` in `fdl.toml` to tune the window, or set it to `false` to disable expiration entirely (see [Configuration](../guide/configuration.md)).
+
 ### Conflict detection (S3 targets)
 
 For S3 (and S3-compatible) targets, fdl uploads the catalog with an HTTP `If-Match` precondition using the ETag recorded from the previous push or pull. If another client has pushed in the meantime, the S3 server rejects the upload with `412 Precondition Failed` and fdl surfaces the conflict:

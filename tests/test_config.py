@@ -413,3 +413,69 @@ def test_target_command_returns_none_when_unset(fdl_project_dir):
     set_value("name", "ds", path)
     set_value("targets.default.url", "/tmp/test", path)
     assert target_command("default", fdl_project_dir) is None
+
+
+# ---------------------------------------------------------------------------
+# snapshot_retention_days — maintenance config
+# Spec: maintenance.snapshot_retention_days controls snapshot expiration on
+# push; defaults to 7 days, false disables
+# ---------------------------------------------------------------------------
+
+
+def test_snapshot_retention_defaults_to_seven_days(fdl_project_dir):
+    """snapshot_retention_days returns the default when unset."""
+    from fdl.config import (
+        DEFAULT_SNAPSHOT_RETENTION_DAYS,
+        snapshot_retention_days,
+    )
+
+    set_value("name", "ds", fdl_project_dir / "fdl.toml")
+    assert snapshot_retention_days(fdl_project_dir) == 7
+    assert DEFAULT_SNAPSHOT_RETENTION_DAYS == 7
+
+
+def test_snapshot_retention_reads_configured_value(fdl_project_dir):
+    """A value set via fdl config (stored as string) is parsed as int."""
+    from fdl.config import snapshot_retention_days
+
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+    set_value("maintenance.snapshot_retention_days", "30", path)
+    assert snapshot_retention_days(fdl_project_dir) == 30
+
+
+def test_snapshot_retention_native_int(fdl_project_dir):
+    """A hand-edited native TOML integer is accepted."""
+    from fdl.config import snapshot_retention_days
+
+    path = fdl_project_dir / "fdl.toml"
+    path.write_text('name = "ds"\n\n[maintenance]\nsnapshot_retention_days = 14\n')
+    assert snapshot_retention_days(fdl_project_dir) == 14
+
+
+def test_snapshot_retention_false_disables(fdl_project_dir):
+    """false (native bool or string) disables expiration (returns None)."""
+    from fdl.config import snapshot_retention_days
+
+    path = fdl_project_dir / "fdl.toml"
+    path.write_text('name = "ds"\n\n[maintenance]\nsnapshot_retention_days = false\n')
+    assert snapshot_retention_days(fdl_project_dir) is None
+
+    set_value("maintenance.snapshot_retention_days", "false", path)
+    assert snapshot_retention_days(fdl_project_dir) is None
+
+
+def test_snapshot_retention_rejects_invalid_values(fdl_project_dir):
+    """Negative and non-numeric values are rejected."""
+    from fdl.config import snapshot_retention_days
+
+    path = fdl_project_dir / "fdl.toml"
+    set_value("name", "ds", path)
+
+    set_value("maintenance.snapshot_retention_days", "-1", path)
+    with pytest.raises(ValueError, match=">= 0"):
+        snapshot_retention_days(fdl_project_dir)
+
+    set_value("maintenance.snapshot_retention_days", "weekly", path)
+    with pytest.raises(ValueError, match="number of days"):
+        snapshot_retention_days(fdl_project_dir)
