@@ -300,10 +300,13 @@ def expire(
 
     Snapshots older than the retention period are expired via DuckLake's
     ``ducklake_expire_snapshots`` (the latest snapshot is always kept),
-    and the data files they referenced are deleted from storage. fdl also
-    runs this automatically after catalog writes (``fdl run`` /
-    ``fdl sql``) and before the conversion in ``fdl push``, controlled by
-    ``maintenance.snapshot_retention_days`` in fdl.toml.
+    and the data files they referenced are deleted from storage, together
+    with orphaned files left behind by crashed writes — even when no
+    snapshot was old enough to expire. fdl also runs expiration
+    automatically after catalog writes (``fdl run`` / ``fdl sql``) and
+    before the conversion in ``fdl push``, controlled by
+    ``maintenance.snapshot_retention_days`` in fdl.toml; the automatic
+    runs skip the file cleanup when nothing was expired.
 
     Args:
         target: Target name defined in fdl.toml.
@@ -311,7 +314,10 @@ def expire(
             ``maintenance.snapshot_retention_days`` from fdl.toml (or the
             default 7). A config value of ``false`` only disables the
             automatic expiration — explicit calls fall back to the default.
-        dry_run: Only count what would be expired; nothing is modified.
+        dry_run: Only count what would be expired/deleted; nothing is
+            modified. File counts are a lower bound: files that the
+            expiration itself would schedule for deletion are not known
+            until it actually runs.
         project_dir: Project directory containing fdl.toml. Defaults to the
             nearest ancestor that contains one.
 
@@ -337,7 +343,11 @@ def expire(
         if retention_days is None:
             retention_days = DEFAULT_SNAPSHOT_RETENTION_DAYS
     return _expire_snapshots(
-        target, retention_days=retention_days, dry_run=dry_run, project_dir=root
+        target,
+        retention_days=retention_days,
+        dry_run=dry_run,
+        always_cleanup=True,
+        project_dir=root,
     )
 
 

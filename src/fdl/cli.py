@@ -355,8 +355,11 @@ def expire(
 
     window = f"older than {result.retention_days} days"
     if result.dry_run:
-        console.print(f"Would expire {result.expired_snapshots} snapshots ({window})")
-    elif result.expired_snapshots:
+        console.print(
+            f"Would expire {result.expired_snapshots} snapshots ({window}) "
+            f"and delete {result.deleted_files} data files"
+        )
+    elif result.expired_snapshots or result.deleted_files:
         console.print(
             f"Expired {result.expired_snapshots} snapshots ({window}), "
             f"deleted {result.deleted_files} data files"

@@ -203,6 +203,58 @@ def test_expire_command_python_api(fdl_project_dir: Path):
     assert _catalog_stats(fdl_project_dir)["snapshots"] == 1
 
 
+def test_expire_command_cleans_orphans_without_expirable_snapshots(
+    fdl_project_dir: Path,
+):
+    """Explicit fdl expire deletes orphaned files even when no snapshot is
+    old enough to expire (the standalone-prune use case)."""
+    import os
+    import time
+
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)  # single snapshot only
+
+    data_dir = storage / "test_ds" / "ducklake.duckdb.files"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    orphan = data_dir / "orphan.parquet"
+    orphan.write_bytes(b"not a real parquet")
+    old = time.time() - 3600
+    os.utime(orphan, (old, old))
+
+    result = CliRunner().invoke(app, ["expire", "default", "--retention-days", "0"])
+    assert result.exit_code == 0, result.output
+    assert "Expired 0 snapshots" in result.output
+
+    assert not orphan.exists()
+    assert _catalog_stats(fdl_project_dir)["snapshots"] == 1
+
+
+def test_expire_command_dry_run_reports_orphans_without_deleting(
+    fdl_project_dir: Path,
+):
+    """--dry-run counts orphaned files but leaves them in place."""
+    import os
+    import time
+
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+
+    data_dir = storage / "test_ds" / "ducklake.duckdb.files"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    orphan = data_dir / "orphan.parquet"
+    orphan.write_bytes(b"not a real parquet")
+    old = time.time() - 3600
+    os.utime(orphan, (old, old))
+
+    result = CliRunner().invoke(app, [
+        "expire", "default", "--retention-days", "0", "--dry-run",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "delete 1 data files" in result.output
+
+    assert orphan.exists()
+
+
 def test_sql_write_triggers_auto_expire(fdl_project_dir: Path):
     """A writing fdl sql triggers auto-expiration afterwards."""
     storage = fdl_project_dir / "storage"

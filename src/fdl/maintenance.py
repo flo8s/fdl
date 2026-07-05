@@ -54,6 +54,7 @@ def expire_snapshots(
     *,
     retention_days: int,
     dry_run: bool = False,
+    always_cleanup: bool = False,
     project_dir: Path | None = None,
 ) -> ExpireResult:
     """Expire old snapshots and delete unreferenced data files.
@@ -64,28 +65,33 @@ def expire_snapshots(
     The latest snapshot is always kept, even when it is older than the
     cutoff.
 
-    When at least one snapshot was expired, data files are cleaned up in
-    the same pass:
+    Data files are cleaned up in the same pass:
 
-    - ``ducklake_cleanup_old_files`` deletes the files the expired
+    - ``ducklake_cleanup_old_files`` deletes the files that expired
       snapshots scheduled for deletion (immediately, ``cleanup_all``:
       only snapshots past the retention period referenced them).
     - ``ducklake_delete_orphaned_files`` deletes untracked files older
       than the cutoff (leftovers from crashed writes); the cutoff keeps a
       freshly written file from being swept up.
 
-    When nothing was expired, file cleanup is skipped entirely: both
+    By default file cleanup is skipped when nothing was expired: both
     cleanup functions list DATA_PATH, which is a network LIST for S3
-    targets and not worth paying on every invocation.
+    targets and not worth paying on every automatic invocation. Explicit
+    invocations (``fdl expire`` / ``fdl.expire``) pass ``always_cleanup``
+    so leftovers are removed even when no snapshot is old enough — the
+    replacement for a standalone prune command.
 
     Args:
         target_name: Target name from fdl.toml.
         retention_days: Snapshots older than this many days are expired.
             ``0`` expires everything except the latest snapshot.
-        dry_run: When ``True``, only count what would be expired; the
-            catalog and storage are not modified and file counts are
-            reported as ``0`` (files to delete are only known after the
-            expiration actually runs).
+        dry_run: When ``True``, only count; the catalog and storage are
+            not modified. File counts are reported only with
+            ``always_cleanup`` and are a lower bound: files that the
+            expiration itself would schedule for deletion are not known
+            until it actually runs.
+        always_cleanup: Run the file cleanup even when no snapshot was
+            expired.
         project_dir: Project directory containing fdl.toml. Defaults to
             the nearest ancestor that contains one.
 
@@ -114,33 +120,34 @@ def expire_snapshots(
             f"SELECT count(*) FROM ducklake_expire_snapshots("
             f"'{name}', older_than => {cutoff}, dry_run => true)"
         ).fetchone()[0]
-        if dry_run or not expired:
-            return ExpireResult(days, expired, 0, 0, dry_run=dry_run)
-
-        conn.execute(
-            f"CALL ducklake_expire_snapshots('{name}', older_than => {cutoff})"
-        )
-
-        cleaned = conn.execute(
-            f"SELECT count(*) FROM ducklake_cleanup_old_files("
-            f"'{name}', cleanup_all => true, dry_run => true)"
-        ).fetchone()[0]
-        if cleaned:
+        if expired and not dry_run:
             conn.execute(
-                f"CALL ducklake_cleanup_old_files('{name}', cleanup_all => true)"
+                f"CALL ducklake_expire_snapshots('{name}', older_than => {cutoff})"
             )
 
-        orphaned = conn.execute(
-            f"SELECT count(*) FROM ducklake_delete_orphaned_files("
-            f"'{name}', older_than => {cutoff}, dry_run => true)"
-        ).fetchone()[0]
-        if orphaned:
-            conn.execute(
-                f"CALL ducklake_delete_orphaned_files("
-                f"'{name}', older_than => {cutoff})"
-            )
+        cleaned = orphaned = 0
+        if always_cleanup or (expired and not dry_run):
+            cleaned = conn.execute(
+                f"SELECT count(*) FROM ducklake_cleanup_old_files("
+                f"'{name}', cleanup_all => true, dry_run => true)"
+            ).fetchone()[0]
+            if cleaned and not dry_run:
+                conn.execute(
+                    f"CALL ducklake_cleanup_old_files("
+                    f"'{name}', cleanup_all => true)"
+                )
 
-    return ExpireResult(days, expired, cleaned, orphaned)
+            orphaned = conn.execute(
+                f"SELECT count(*) FROM ducklake_delete_orphaned_files("
+                f"'{name}', older_than => {cutoff}, dry_run => true)"
+            ).fetchone()[0]
+            if orphaned and not dry_run:
+                conn.execute(
+                    f"CALL ducklake_delete_orphaned_files("
+                    f"'{name}', older_than => {cutoff})"
+                )
+
+    return ExpireResult(days, expired, cleaned, orphaned, dry_run=dry_run)
 
 
 def auto_expire(target_name: str, *, project_dir: Path | None = None) -> None:

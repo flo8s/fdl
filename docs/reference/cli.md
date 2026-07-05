@@ -224,7 +224,9 @@ fdl expire TARGET [--retention-days N] [--dry-run]
 
 DuckLake never removes anything on its own: every write adds a snapshot, and dropped or replaced tables (including their inlined-data tables) stay in the catalog forever. Without expiration the catalog grows linearly with build count, which bloats the shipped catalog and slows down the SQLite ↔ DuckDB conversion in push/pull.
 
-`fdl expire` expires every snapshot older than the retention period via DuckLake's `ducklake_expire_snapshots` (the latest snapshot is always kept, even when it is older than the cutoff) and deletes the data files that become unreferenced, including orphaned files left behind by crashed writes. For S3 targets the file cleanup operates on remote storage.
+`fdl expire` expires every snapshot older than the retention period via DuckLake's `ducklake_expire_snapshots` (the latest snapshot is always kept, even when it is older than the cutoff) and deletes the data files that become unreferenced. It also deletes orphaned files left behind by crashed writes — even when no snapshot was old enough to expire — so an explicit run doubles as a storage prune. For S3 targets the file cleanup operates on remote storage.
+
+With `--dry-run`, the reported file count is a lower bound: files that the expiration itself would schedule for deletion are only known once it actually runs.
 
 ### Automatic expiration
 
@@ -233,7 +235,7 @@ You rarely need to run `fdl expire` by hand. Comparable to `git gc --auto`, fdl 
 - after `fdl run` / `fdl sql`, when the command actually wrote to the catalog (read-only commands never trigger it), and
 - before the catalog conversion in `fdl push`.
 
-The automatic runs use `maintenance.snapshot_retention_days` from `fdl.toml` (default: 7 days); set it to `false` to disable them (see [Configuration](../guide/configuration.md)). The explicit `fdl expire` command works regardless of that setting.
+The automatic runs use `maintenance.snapshot_retention_days` from `fdl.toml` (default: 7 days); set it to `false` to disable them (see [Configuration](../guide/configuration.md)). Unlike explicit runs, they skip the file cleanup when nothing was expired (the cleanup lists DATA_PATH, a network LIST on S3, not worth paying on every write). The explicit `fdl expire` command works regardless of that setting.
 
 Writers that bypass fdl commands entirely (e.g. a scheduler invoking your pipeline directly with `FDL_*` environment variables) are outside fdl's sight; run `fdl expire` periodically in that setup.
 
