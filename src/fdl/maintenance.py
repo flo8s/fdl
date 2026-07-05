@@ -1,48 +1,93 @@
 """Catalog maintenance: snapshot expiration and data file cleanup.
 
-DuckLake never removes data on its own: every build adds snapshots, and
-dropped/replaced tables (including their ``ducklake_inlined_data_*``
-tables) stay in the catalog forever. For datasets that rebuild frequently
-this grows the catalog linearly with build count, which slows down the
-SQLite <-> DuckDB conversion in push/pull.
+DuckLake in normal operation never removes anything: every build adds
+snapshots, and dropped/replaced tables (including their
+``ducklake_inlined_data_*`` tables) stay in the catalog forever. For
+catalogs that are rebuilt frequently this grows the catalog linearly
+with build count, which slows down the SQLite <-> DuckDB conversion in
+push/pull and bloats the shipped catalog.
 
-:func:`expire_snapshots` runs the three DuckLake maintenance functions
-against the local SQLite catalog before push:
+Entry points:
 
-1. ``ducklake_expire_snapshots`` — drop snapshots older than the retention
-   period (the latest snapshot is always kept, even when it is older).
-2. ``ducklake_cleanup_old_files`` — delete data files that expired
-   snapshots scheduled for deletion.
-3. ``ducklake_delete_orphaned_files`` — delete files in DATA_PATH that are
-   not tracked by the catalog (leftovers from crashed writes).
+- :func:`expire_snapshots` — the core primitive (CLI: ``fdl expire``,
+  Python API: ``fdl.expire``). Expires snapshots older than a retention
+  period and deletes the data files that become unreferenced.
+- :func:`auto_expire` — policy-driven wrapper, comparable to
+  ``git gc --auto``: fdl commands call it after writing to the catalog
+  (``run``, ``sql``) and before the catalog conversion in ``push``.
+  Controlled by ``maintenance.snapshot_retention_days`` in fdl.toml.
+
+Deliberately NOT used: DuckLake's ``CHECKPOINT``-driven maintenance
+(``expire_older_than`` / ``delete_older_than`` catalog options). A
+checkpoint also flushes inlined data to parquet, which would turn every
+small inlined table into a separate data file on storage — fdl keeps
+small tables inlined in the catalog on purpose.
 """
 
 from __future__ import annotations
 
+import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 from fdl.console import console
+
+
+@dataclass(frozen=True)
+class ExpireResult:
+    """Outcome of one :func:`expire_snapshots` pass."""
+
+    retention_days: int
+    expired_snapshots: int
+    cleaned_files: int
+    orphaned_files: int
+    dry_run: bool = False
+
+    @property
+    def deleted_files(self) -> int:
+        """Total number of data files deleted from storage."""
+        return self.cleaned_files + self.orphaned_files
 
 
 def expire_snapshots(
     target_name: str,
     *,
     retention_days: int,
+    dry_run: bool = False,
     project_dir: Path | None = None,
-) -> None:
+) -> ExpireResult:
     """Expire old snapshots and delete unreferenced data files.
 
     Connects to the local SQLite catalog (with the target's DATA_PATH, so
     file cleanup also works for S3 targets) and expires every snapshot
-    older than ``retention_days`` days. Data files that become
-    unreferenced are deleted from storage in the same pass.
+    older than ``retention_days`` days via ``ducklake_expire_snapshots``.
+    The latest snapshot is always kept, even when it is older than the
+    cutoff.
+
+    When at least one snapshot was expired, data files are cleaned up in
+    the same pass:
+
+    - ``ducklake_cleanup_old_files`` deletes the files the expired
+      snapshots scheduled for deletion (immediately, ``cleanup_all``:
+      only snapshots past the retention period referenced them).
+    - ``ducklake_delete_orphaned_files`` deletes untracked files older
+      than the cutoff (leftovers from crashed writes); the cutoff keeps a
+      freshly written file from being swept up.
+
+    When nothing was expired, file cleanup is skipped entirely: both
+    cleanup functions list DATA_PATH, which is a network LIST for S3
+    targets and not worth paying on every invocation.
 
     Args:
         target_name: Target name from fdl.toml.
         retention_days: Snapshots older than this many days are expired.
             ``0`` expires everything except the latest snapshot.
-        project_dir: Project directory containing fdl.toml. Defaults to the
-            nearest ancestor that contains one.
+        dry_run: When ``True``, only count what would be expired; the
+            catalog and storage are not modified and file counts are
+            reported as ``0`` (files to delete are only known after the
+            expiration actually runs).
+        project_dir: Project directory containing fdl.toml. Defaults to
+            the nearest ancestor that contains one.
 
     Raises:
         ValueError: If ``retention_days`` is negative.
@@ -69,19 +114,13 @@ def expire_snapshots(
             f"SELECT count(*) FROM ducklake_expire_snapshots("
             f"'{name}', older_than => {cutoff}, dry_run => true)"
         ).fetchone()[0]
-        if not expired:
-            return
+        if dry_run or not expired:
+            return ExpireResult(days, expired, 0, 0, dry_run=dry_run)
+
         conn.execute(
             f"CALL ducklake_expire_snapshots('{name}', older_than => {cutoff})"
         )
 
-        # File cleanup only runs when this push expired something: both
-        # functions below list DATA_PATH, which is a network LIST for S3
-        # targets and not worth paying on every push.
-        #
-        # Files scheduled for deletion by the expiration above are removed
-        # immediately (cleanup_all): only snapshots past the retention
-        # period reference them, so no supported reader needs them.
         cleaned = conn.execute(
             f"SELECT count(*) FROM ducklake_cleanup_old_files("
             f"'{name}', cleanup_all => true, dry_run => true)"
@@ -91,8 +130,6 @@ def expire_snapshots(
                 f"CALL ducklake_cleanup_old_files('{name}', cleanup_all => true)"
             )
 
-        # Orphaned files keep the retention cutoff as a safety margin so a
-        # file written moments ago is never swept up.
         orphaned = conn.execute(
             f"SELECT count(*) FROM ducklake_delete_orphaned_files("
             f"'{name}', older_than => {cutoff}, dry_run => true)"
@@ -103,7 +140,61 @@ def expire_snapshots(
                 f"'{name}', older_than => {cutoff})"
             )
 
-    console.print(
-        f"Expired {expired} snapshots (older than {days} days), "
-        f"deleted {cleaned + orphaned} data files"
+    return ExpireResult(days, expired, cleaned, orphaned)
+
+
+def auto_expire(target_name: str, *, project_dir: Path | None = None) -> None:
+    """Run policy-driven expiration, like ``git gc --auto``.
+
+    Reads ``maintenance.snapshot_retention_days`` from fdl.toml and calls
+    :func:`expire_snapshots`. No-op when the policy is disabled
+    (``snapshot_retention_days = false``). Prints a one-line summary when
+    anything was expired, stays silent otherwise.
+
+    Callers invoke this after an operation that wrote to the catalog
+    (see :func:`latest_snapshot_id` for the cheap write detection) or,
+    for push, right before the catalog conversion.
+    """
+    from fdl.config import find_project_dir, snapshot_retention_days
+
+    root = project_dir or find_project_dir()
+    retention = snapshot_retention_days(root)
+    if retention is None:
+        return
+
+    result = expire_snapshots(
+        target_name, retention_days=retention, project_dir=root
     )
+    if result.expired_snapshots:
+        console.print(
+            f"Expired {result.expired_snapshots} snapshots "
+            f"(older than {result.retention_days} days), "
+            f"deleted {result.deleted_files} data files"
+        )
+
+
+def latest_snapshot_id(
+    target_name: str, project_dir: Path | None = None
+) -> int | None:
+    """Latest snapshot id, read directly from the local SQLite catalog.
+
+    Used to bracket a command execution and detect whether it wrote to
+    the catalog (writes always create snapshots), so that read-only
+    commands never trigger :func:`auto_expire`. Reads the SQLite file
+    with the stdlib driver — no DuckLake ATTACH — so it is cheap enough
+    to call twice per command.
+
+    Returns ``None`` when the catalog file does not exist.
+    """
+    from fdl.config import catalog_path
+
+    path = Path(catalog_path(target_name, project_dir))
+    if not path.exists():
+        return None
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute(
+            "SELECT max(snapshot_id) FROM ducklake_snapshot"
+        ).fetchone()[0]
+    finally:
+        conn.close()

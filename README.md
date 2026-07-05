@@ -37,6 +37,7 @@ duckdb -c "ATTACH 'ducklake:http://localhost:4001/my_dataset/ducklake.duckdb' AS
 - init / push / pull — Git-like catalog management with conflict detection
 - sql — Query and modify data directly from the command line
 - run — Execute any command (dbt, dlt, Python) with auto-injected storage credentials
+- expire — Snapshot retention and storage cleanup, runs automatically after writes
 - serve — Built-in HTTP server with CORS and Range request support
 - Python API — Call the same operations in-process from Dagster, Airflow, etc.
 - Works with S3-compatible storage (AWS S3, Cloudflare R2, GCS, etc) and local directories

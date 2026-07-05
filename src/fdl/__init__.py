@@ -64,6 +64,10 @@ def default_target_url() -> str:
 # function defined below).
 # ---------------------------------------------------------------------------
 
+from fdl.maintenance import (  # noqa: E402
+    ExpireResult,
+    expire_snapshots as _expire_snapshots,
+)
 from fdl.push import do_push as _do_push  # noqa: E402
 from fdl.pull import (  # noqa: E402
     do_pull as _do_pull,
@@ -285,6 +289,58 @@ def sync(
     return 0
 
 
+def expire(
+    target: str,
+    *,
+    retention_days: int | None = None,
+    dry_run: bool = False,
+    project_dir: Path | None = None,
+):
+    """Expire old snapshots and delete unreferenced data files (CLI: ``fdl expire``).
+
+    Snapshots older than the retention period are expired via DuckLake's
+    ``ducklake_expire_snapshots`` (the latest snapshot is always kept),
+    and the data files they referenced are deleted from storage. fdl also
+    runs this automatically after catalog writes (``fdl run`` /
+    ``fdl sql``) and before the conversion in ``fdl push``, controlled by
+    ``maintenance.snapshot_retention_days`` in fdl.toml.
+
+    Args:
+        target: Target name defined in fdl.toml.
+        retention_days: Retention period in days. When ``None``, uses
+            ``maintenance.snapshot_retention_days`` from fdl.toml (or the
+            default 7). A config value of ``false`` only disables the
+            automatic expiration — explicit calls fall back to the default.
+        dry_run: Only count what would be expired; nothing is modified.
+        project_dir: Project directory containing fdl.toml. Defaults to the
+            nearest ancestor that contains one.
+
+    Returns:
+        fdl.maintenance.ExpireResult: Counts of expired snapshots and
+        deleted data files.
+
+    Raises:
+        FileNotFoundError: If ``fdl.toml`` or the local catalog file cannot
+            be located.
+        ValueError: If ``target`` is not defined in ``fdl.toml`` or
+            ``retention_days`` is negative.
+    """
+    from fdl.config import (
+        DEFAULT_SNAPSHOT_RETENTION_DAYS,
+        find_project_dir,
+        snapshot_retention_days,
+    )
+
+    root = project_dir or find_project_dir()
+    if retention_days is None:
+        retention_days = snapshot_retention_days(root)
+        if retention_days is None:
+            retention_days = DEFAULT_SNAPSHOT_RETENTION_DAYS
+    return _expire_snapshots(
+        target, retention_days=retention_days, dry_run=dry_run, project_dir=root
+    )
+
+
 @contextmanager
 def connect(
     target: str,
@@ -333,7 +389,9 @@ __all__ = [
     "ducklake_data_path",
     "fdl_target_dir",
     # Python API
+    "ExpireResult",
     "connect",
+    "expire",
     "init",
     "pull",
     "push",

@@ -1,12 +1,18 @@
-"""Integration tests for snapshot expiration on push (local targets).
+"""Integration tests for snapshot expiration (local targets).
 
-Spec (docs/reference/cli.md#push):
-  fdl push expires snapshots older than maintenance.snapshot_retention_days
-  (default 7 days) before converting the catalog, and deletes the data
-  files those snapshots referenced. This keeps the catalog from growing
-  linearly with build count: without expiration every CREATE OR REPLACE
-  leaves a dead table version (and its ducklake_inlined_data_* table)
-  behind forever.
+Spec (docs/reference/cli.md#expire):
+  fdl expire TARGET [--retention-days N] [--dry-run]
+  - Expires snapshots older than the retention period (default:
+    maintenance.snapshot_retention_days, or 7 days) and deletes the data
+    files they referenced. The latest snapshot is always kept.
+  - Runs automatically after fdl commands that wrote to the catalog
+    (run, sql) and before the catalog conversion in push. Read-only
+    commands never trigger it. maintenance.snapshot_retention_days =
+    false disables the automatic runs.
+
+  This keeps the catalog from growing linearly with build count: without
+  expiration every CREATE OR REPLACE leaves a dead table version (and
+  its ducklake_inlined_data_* table) behind forever.
 """
 
 import sqlite3
@@ -139,6 +145,138 @@ def test_push_expiration_disabled(fdl_project_dir: Path):
     ])
     before = _catalog_stats(fdl_project_dir)
     result = CliRunner().invoke(app, ["push", "default"])
+    assert result.exit_code == 0, result.output
+
+    assert _catalog_stats(fdl_project_dir) == before
+
+
+def test_expire_command_with_retention_zero(fdl_project_dir: Path):
+    """fdl expire --retention-days 0 keeps only the latest snapshot."""
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+    for build in range(3):
+        _build(fdl_project_dir, build)
+
+    result = CliRunner().invoke(app, ["expire", "default", "--retention-days", "0"])
+    assert result.exit_code == 0, result.output
+    assert "Expired" in result.output
+
+    after = _catalog_stats(fdl_project_dir)
+    assert after["snapshots"] == 1
+    assert after["tables"] == 3
+
+
+def test_expire_command_dry_run_changes_nothing(fdl_project_dir: Path):
+    """--dry-run reports the would-be count without modifying anything."""
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+    for build in range(3):
+        _build(fdl_project_dir, build)
+
+    before = _catalog_stats(fdl_project_dir)
+    data_dir = storage / "test_ds" / "ducklake.duckdb.files"
+    files_before = len(list(data_dir.rglob("*.parquet")))
+
+    result = CliRunner().invoke(app, [
+        "expire", "default", "--retention-days", "0", "--dry-run",
+    ])
+    assert result.exit_code == 0, result.output
+    assert f"Would expire {before['snapshots'] - 1} snapshots" in result.output
+
+    assert _catalog_stats(fdl_project_dir) == before
+    assert len(list(data_dir.rglob("*.parquet"))) == files_before
+
+
+def test_expire_command_python_api(fdl_project_dir: Path):
+    """fdl.expire() returns an ExpireResult with the expired counts."""
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+    for build in range(2):
+        _build(fdl_project_dir, build)
+
+    before = _catalog_stats(fdl_project_dir)
+    result = fdl.expire(
+        "default", retention_days=0, project_dir=fdl_project_dir
+    )
+    assert result.expired_snapshots == before["snapshots"] - 1
+    assert result.deleted_files > 0
+    assert _catalog_stats(fdl_project_dir)["snapshots"] == 1
+
+
+def test_sql_write_triggers_auto_expire(fdl_project_dir: Path):
+    """A writing fdl sql triggers auto-expiration afterwards."""
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+    for build in range(2):
+        _build(fdl_project_dir, build)
+    CliRunner().invoke(app, [
+        "config", "maintenance.snapshot_retention_days", "0",
+    ])
+
+    result = CliRunner().invoke(app, [
+        "sql", "default", "CREATE OR REPLACE TABLE t0 AS SELECT 99 AS x",
+    ])
+    assert result.exit_code == 0, result.output
+
+    assert _catalog_stats(fdl_project_dir)["snapshots"] == 1
+
+
+def test_sql_read_does_not_trigger_auto_expire(fdl_project_dir: Path):
+    """A read-only fdl sql never expires, even with expirable snapshots."""
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+    for build in range(2):
+        _build(fdl_project_dir, build)
+    CliRunner().invoke(app, [
+        "config", "maintenance.snapshot_retention_days", "0",
+    ])
+
+    before = _catalog_stats(fdl_project_dir)
+    result = CliRunner().invoke(app, ["sql", "default", "SELECT count(*) FROM big"])
+    assert result.exit_code == 0, result.output
+
+    assert _catalog_stats(fdl_project_dir) == before
+
+
+WRITE_SNIPPET = (
+    "from fdl.ducklake import connect\n"
+    "with connect(target_name='default') as conn:\n"
+    "    conn.execute('CREATE OR REPLACE TABLE t0 AS SELECT 99 AS x')\n"
+)
+
+
+def test_run_write_triggers_auto_expire(fdl_project_dir: Path):
+    """A pipeline command that wrote to the catalog triggers auto-expiration."""
+    import sys
+
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+    for build in range(2):
+        _build(fdl_project_dir, build)
+    CliRunner().invoke(app, [
+        "config", "maintenance.snapshot_retention_days", "0",
+    ])
+
+    result = CliRunner().invoke(app, [
+        "run", "default", "--", sys.executable, "-c", WRITE_SNIPPET,
+    ])
+    assert result.exit_code == 0, result.output
+
+    assert _catalog_stats(fdl_project_dir)["snapshots"] == 1
+
+
+def test_run_without_write_does_not_trigger_auto_expire(fdl_project_dir: Path):
+    """A command that did not write to the catalog never expires."""
+    storage = fdl_project_dir / "storage"
+    _init_project(fdl_project_dir, storage)
+    for build in range(2):
+        _build(fdl_project_dir, build)
+    CliRunner().invoke(app, [
+        "config", "maintenance.snapshot_retention_days", "0",
+    ])
+
+    before = _catalog_stats(fdl_project_dir)
+    result = CliRunner().invoke(app, ["run", "default", "--", "sh", "-c", "true"])
     assert result.exit_code == 0, result.output
 
     assert _catalog_stats(fdl_project_dir) == before

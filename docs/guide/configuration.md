@@ -43,7 +43,7 @@ s3_secret_access_key = "${FDL_S3_SECRET_ACCESS_KEY}"
 | `targets.<name>.s3_endpoint` | S3-compatible endpoint URL |
 | `targets.<name>.s3_access_key_id` | S3 access key |
 | `targets.<name>.s3_secret_access_key` | S3 secret key |
-| `maintenance.snapshot_retention_days` | Snapshots older than this many days are expired on push (default: `7`; `false` disables). See [push](../reference/cli.md#push) |
+| `maintenance.snapshot_retention_days` | Retention period for automatic snapshot expiration (default: `7`; `false` disables the automatic runs). See [expire](../reference/cli.md#expire) |
 
 All values support `${VAR}` environment variable expansion. Set the actual values via [direnv](https://direnv.net/) (`.envrc`), CI secrets, or shell exports.
 

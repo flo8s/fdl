@@ -14,6 +14,7 @@ project. The same lookup is also used by the [Python API](python-api.md).
 | [`sync`](#sync) | Pull, run pipeline, and push in one step |
 | [`run`](#run) | Run a command with injected env vars |
 | [`sql`](#sql) | Execute SQL against the catalog |
+| [`expire`](#expire) | Expire old snapshots and clean up data files |
 | [`duckdb`](#duckdb) | Launch an interactive DuckDB shell |
 | [`config`](#config) | Get or set configuration |
 | [`serve`](#serve) | Start an HTTP server |
@@ -77,11 +78,7 @@ The local catalog is SQLite; push converts it to DuckDB format (the distribution
 
 ### Snapshot expiration
 
-Before converting the catalog, push expires DuckLake snapshots older than `maintenance.snapshot_retention_days` (default: 7 days; the latest snapshot is always kept) and deletes the data files those snapshots referenced, including orphaned files left behind by crashed writes.
-
-Without expiration the catalog grows linearly with build count: every `CREATE OR REPLACE TABLE` leaves a dead table version (and its inlined-data table) behind, which slows down the SQLite ↔ DuckDB conversion in push/pull. Expiration keeps the catalog bounded to the retention window.
-
-Note that expiring snapshots removes time travel history older than the retention period, and clients still reading a catalog copy published before the retention window may fail to resolve deleted data files. Set `maintenance.snapshot_retention_days` in `fdl.toml` to tune the window, or set it to `false` to disable expiration entirely (see [Configuration](../guide/configuration.md)).
+Before converting the catalog, push runs automatic [snapshot expiration](#expire), so the shipped catalog (and the conversion itself) stays bounded to the retention window.
 
 ### Conflict detection (S3 targets)
 
@@ -210,6 +207,39 @@ fdl sql default --force "SELECT * FROM cities"
 ```
 
 See [Working with Data](../guide/working-with-data.md) for details on how the catalog connection works and caveats.
+
+## expire
+
+Expire old snapshots and delete unreferenced data files.
+
+```
+fdl expire TARGET [--retention-days N] [--dry-run]
+```
+
+| Argument / Option | Description |
+|---|---|
+| `TARGET` | Target name (e.g. `default`) |
+| `--retention-days` | Retention period in days (default: `maintenance.snapshot_retention_days` from fdl.toml, or 7) |
+| `--dry-run` | Only report how many snapshots would be expired |
+
+DuckLake never removes anything on its own: every write adds a snapshot, and dropped or replaced tables (including their inlined-data tables) stay in the catalog forever. Without expiration the catalog grows linearly with build count, which bloats the shipped catalog and slows down the SQLite ↔ DuckDB conversion in push/pull.
+
+`fdl expire` expires every snapshot older than the retention period via DuckLake's `ducklake_expire_snapshots` (the latest snapshot is always kept, even when it is older than the cutoff) and deletes the data files that become unreferenced, including orphaned files left behind by crashed writes. For S3 targets the file cleanup operates on remote storage.
+
+### Automatic expiration
+
+You rarely need to run `fdl expire` by hand. Comparable to `git gc --auto`, fdl runs it automatically:
+
+- after `fdl run` / `fdl sql`, when the command actually wrote to the catalog (read-only commands never trigger it), and
+- before the catalog conversion in `fdl push`.
+
+The automatic runs use `maintenance.snapshot_retention_days` from `fdl.toml` (default: 7 days); set it to `false` to disable them (see [Configuration](../guide/configuration.md)). The explicit `fdl expire` command works regardless of that setting.
+
+Writers that bypass fdl commands entirely (e.g. a scheduler invoking your pipeline directly with `FDL_*` environment variables) are outside fdl's sight; run `fdl expire` periodically in that setup.
+
+### Caveats
+
+Expiring snapshots removes time travel history older than the retention period, and clients still reading a catalog copy published before the retention window may fail to resolve deleted data files. Tune `maintenance.snapshot_retention_days` to the staleness you need to support.
 
 ## duckdb
 
