@@ -63,5 +63,17 @@ def run_command(
             env[key] = value
     env.setdefault("PYTHONUNBUFFERED", "1")
 
+    from fdl.maintenance import auto_expire, latest_snapshot_id
+
+    snapshot_before = latest_snapshot_id(target, root)
     result = subprocess.run(cmd, env=env, cwd=root)
+
+    # Auto-expire only when the command actually wrote to the catalog
+    # (writes always create snapshots); read-only runs stay side-effect free.
+    if (
+        result.returncode == 0
+        and latest_snapshot_id(target, root) != snapshot_before
+    ):
+        auto_expire(target, project_dir=root)
+
     return result.returncode

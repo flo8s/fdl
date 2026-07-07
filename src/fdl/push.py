@@ -24,10 +24,14 @@ def do_push(
             targets — local targets skip conflict detection.
     """
     from fdl import fdl_target_dir
-    from fdl.config import datasource_name, find_project_dir, resolve_target
+    from fdl.config import (
+        datasource_name,
+        find_project_dir,
+        resolve_target,
+        target_public_url,
+    )
     from fdl.ducklake import convert_sqlite_to_duckdb
-
-    from fdl.config import target_public_url
+    from fdl.maintenance import auto_expire
 
     dataset_dir = project_dir or find_project_dir()
     dist_dir = dataset_dir / fdl_target_dir(target)
@@ -41,6 +45,11 @@ def do_push(
 
     resolved = resolve_target(target, dataset_dir)
     console.print(f"[bold]--- push: {datasource} → {resolved} ---[/bold]")
+
+    # Expire old snapshots before the conversion so the shipped catalog
+    # (and the conversion itself) stays bounded to the retention window.
+    auto_expire(target, project_dir=dataset_dir)
+
     convert_sqlite_to_duckdb(dataset_dir, target)
 
     pub = target_public_url(target, dataset_dir)

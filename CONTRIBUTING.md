@@ -24,7 +24,7 @@ src/fdl/
 ├── ducklake.py       — DuckLake catalog operations
 ├── pull.py           — Pull catalog from target
 ├── push.py           — Push catalog to target
-├── prune.py          — Prune orphaned data files on target storage
+├── maintenance.py    — Snapshot expiration and data file cleanup
 ├── serve.py          — Local HTTP server with CORS + Range support
 ├── s3.py             — S3 storage operations
 └── console.py        — Console output utilities

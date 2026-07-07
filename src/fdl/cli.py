@@ -294,29 +294,78 @@ def sql(
         )
         raise SystemExit(1)
 
+    from fdl.config import find_project_dir
+    from fdl.maintenance import auto_expire, latest_snapshot_id
+
+    root = find_project_dir()
+    snapshot_before = latest_snapshot_id(target, root)
     try:
         with fdl.connect(target) as conn:
             conn.execute(query)
-            if not conn.description:
-                return
-            columns = [desc[0] for desc in conn.description]
-            rows = conn.fetchall()
-            if not rows:
-                return
-            # Format as table
-            col_widths = [len(c) for c in columns]
-            for row in rows:
-                for i, val in enumerate(row):
-                    col_widths[i] = max(col_widths[i], len(str(val)))
-            header = " | ".join(c.ljust(w) for c, w in zip(columns, col_widths))
-            separator = "-+-".join("-" * w for w in col_widths)
-            print(header)
-            print(separator)
-            for row in rows:
-                print(" | ".join(str(v).ljust(w) for v, w in zip(row, col_widths)))
+            if conn.description:
+                columns = [desc[0] for desc in conn.description]
+                rows = conn.fetchall()
+                if rows:
+                    # Format as table
+                    col_widths = [len(c) for c in columns]
+                    for row in rows:
+                        for i, val in enumerate(row):
+                            col_widths[i] = max(col_widths[i], len(str(val)))
+                    header = " | ".join(
+                        c.ljust(w) for c, w in zip(columns, col_widths)
+                    )
+                    separator = "-+-".join("-" * w for w in col_widths)
+                    print(header)
+                    print(separator)
+                    for row in rows:
+                        print(" | ".join(
+                            str(v).ljust(w) for v, w in zip(row, col_widths)
+                        ))
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise SystemExit(1) from None
+
+    # Auto-expire only when the query wrote to the catalog (writes always
+    # create snapshots); SELECTs stay side-effect free.
+    if latest_snapshot_id(target, root) != snapshot_before:
+        auto_expire(target, project_dir=root)
+
+
+@app.command()
+def expire(
+    target: str = typer.Argument(..., help="Target name (e.g. default)"),
+    retention_days: int = typer.Option(
+        None,
+        "--retention-days",
+        help="Retention period in days "
+        "(default: maintenance.snapshot_retention_days from fdl.toml, or 7)",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Only report what would be expired"
+    ),
+) -> None:
+    """Expire old snapshots and delete unreferenced data files."""
+    import fdl
+
+    try:
+        result = fdl.expire(target, retention_days=retention_days, dry_run=dry_run)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+
+    window = f"older than {result.retention_days} days"
+    if result.dry_run:
+        console.print(
+            f"Would expire {result.expired_snapshots} snapshots ({window}) "
+            f"and delete {result.deleted_files} data files"
+        )
+    elif result.expired_snapshots or result.deleted_files:
+        console.print(
+            f"Expired {result.expired_snapshots} snapshots ({window}), "
+            f"deleted {result.deleted_files} data files"
+        )
+    else:
+        console.print(f"Nothing to expire ({window})")
 
 
 @app.command()

@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 PROJECT_CONFIG = "fdl.toml"
 
+DEFAULT_SNAPSHOT_RETENTION_DAYS = 7
+
 
 def find_project_dir(start: Path | None = None) -> Path:
     """Find the nearest ancestor directory that contains fdl.toml."""
@@ -294,6 +296,44 @@ def target_public_url(name: str, project_dir: Path | None = None) -> str | None:
         if pub:
             return os.path.expandvars(pub)
     return None
+
+
+def snapshot_retention_days(project_dir: Path | None = None) -> int | None:
+    """Snapshot retention period in days from fdl.toml.
+
+    Reads ``maintenance.snapshot_retention_days``. Snapshots older than
+    this many days are expired on push. Returns
+    :data:`DEFAULT_SNAPSHOT_RETENTION_DAYS` when unset, and ``None`` when
+    expiration is disabled (value ``false``).
+
+    Raises:
+        ValueError: If the value is not a non-negative integer or ``false``.
+    """
+    project_dir = project_dir or find_project_dir()
+    data = _load_toml(project_dir / PROJECT_CONFIG)
+    value = data.get("maintenance", {}).get("snapshot_retention_days")
+    if value is None:
+        return DEFAULT_SNAPSHOT_RETENTION_DAYS
+    # ``fdl config`` writes strings, hand-edited fdl.toml may use native types
+    if value is False or (isinstance(value, str) and value.lower() == "false"):
+        return None
+    if value is True:
+        raise ValueError(
+            "maintenance.snapshot_retention_days must be a number of days "
+            "or false, got true"
+        )
+    try:
+        days = int(value)
+    except ValueError:
+        raise ValueError(
+            f"maintenance.snapshot_retention_days must be a number of days "
+            f"or false, got {value!r}"
+        ) from None
+    if days < 0:
+        raise ValueError(
+            f"maintenance.snapshot_retention_days must be >= 0, got {days}"
+        )
+    return days
 
 
 def target_command(target_name: str, project_dir: Path | None = None) -> str | None:

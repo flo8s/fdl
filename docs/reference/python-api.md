@@ -28,6 +28,7 @@ fdl.push("default")
 | `fdl.push(target)` | `fdl push TARGET` |
 | `fdl.run(target, command)` | `fdl run TARGET -- COMMAND` |
 | `fdl.sync(target, command)` | `fdl sync TARGET -- COMMAND` |
+| `fdl.expire(target)` | `fdl expire TARGET` |
 | `fdl.connect(target)` | (use directly via DuckDB) |
 
 `fdl.connect()` is the Python-only entry point — the CLI uses it internally
@@ -62,6 +63,7 @@ these APIs inside a Dagster asset.
         - push
         - run
         - sync
+        - expire
         - connect
         - default_target_url
         - fdl_target_dir
