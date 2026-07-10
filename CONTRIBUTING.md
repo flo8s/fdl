@@ -8,7 +8,7 @@
 ## Getting started
 
 ```bash
-git clone https://github.com/flo8s/fdl.git
+git clone https://github.com/queria-io/fdl.git
 cd fdl
 uv sync
 uv run fdl --help
