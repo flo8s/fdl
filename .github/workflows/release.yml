@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
       actions: write
     steps:
       - uses: actions/checkout@v5
@@ -20,14 +19,13 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Publishing runs in a separate workflow so a failed upload can be
+      # retried against the tag without re-running semantic-release (which
+      # would refuse, the tag already existing).
       - if: steps.release.outputs.released == 'true'
-        uses: astral-sh/setup-uv@v7
-
-      - if: steps.release.outputs.released == 'true'
-        run: uv build
-
-      - if: steps.release.outputs.released == 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
+        run: gh workflow run publish.yml --ref main -f ref=${{ steps.release.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - if: steps.release.outputs.released == 'true'
         run: gh workflow run docs.yml --ref main
