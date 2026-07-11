@@ -1,0 +1,29 @@
+name: Publish
+
+# Builds a tagged release and publishes it to PyPI via trusted publishing.
+# Decoupled from release.yml so a publish failure (e.g. a trusted-publisher
+# misconfiguration) does not strand an already-created release: re-run this
+# workflow with the tag to retry the upload.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref (tag) to build and publish to PyPI
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: astral-sh/setup-uv@v7
+
+      - run: uv build
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
